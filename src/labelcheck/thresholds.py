@@ -21,3 +21,5 @@ GLARE_ROW_MEAN = 235
 GLARE_BAND_FRACTION = 0.20
 GLARE_CONTRAST = 40
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+# Long edge of the copy sent to OCR, so CPU time stays predictable.
+OCR_LONG_EDGE = 1600

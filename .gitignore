@@ -8,3 +8,15 @@ venv/
 dist/
 *.egg-info/
 .DS_Store
+
+# Local handoff notes. Not part of the repo.
+Next_Steps.md
+
+# UX Design notes. Not part of the repo.
+Prototype_UX_Design.md
+
+# OCR weights. The check loads these from disk and does not download them.
+models/
+
+# ONNX Runtime telemetry id, written into the working directory if telemetry is on.
+:memory:.ses

@@ -7,10 +7,8 @@ from labelcheck.models import (
     LabelVerdict,
     OverallStatus,
 )
+from labelcheck.quality import UNREADABLE_IMAGE_SUMMARY
 
-UNREADABLE_IMAGE_SUMMARY = (
-    "This image is too blurry to read. Upload a sharper photo, or review the label yourself."
-)
 UNREADABLE_IMAGE_FIELD_REASON = "Not read because the image is unusable."
 
 

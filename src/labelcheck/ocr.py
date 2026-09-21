@@ -10,6 +10,7 @@ that is still upside down stays low-confidence, so it is not treated as a match.
 import hashlib
 import os
 import threading
+import unicodedata
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,8 +92,13 @@ def download_models(directory: Path | None = None) -> Path:
 def read_lines(image: Image.Image, engine: RapidOCR | None = None) -> list[OcrLine]:
     """Return text lines in reading order. The long edge is capped first."""
     prepared = _scaled(image)
-    result = (engine or get_engine())(prepared)
-    return _to_lines(result)
+    if engine is None:
+        reader = get_engine()
+        # Flags are sticky on the engine, so a later line re-read must not
+        # leave detection turned off for the next label.
+        detected = reader(prepared, use_det=True, use_cls=False, use_rec=True)
+        return _to_lines(detected, image=prepared, reader=reader)
+    return _to_lines(engine(prepared))
 
 
 def get_engine() -> RapidOCR:
@@ -127,6 +133,10 @@ def _build_engine(directory: Path) -> RapidOCR:
             "Rec.model_type": ModelType.MOBILE,
             "Rec.ocr_version": OCRVersion.PPOCRV5,
             "Rec.model_path": str(rec),
+            # A CPU limit does not change the count this process sees. Two threads
+            # matches the 2 vCPU box and avoids oversubscribing that limit.
+            "EngineConfig.onnxruntime.intra_op_num_threads": 2,
+            "EngineConfig.onnxruntime.inter_op_num_threads": 1,
         }
     )
 
@@ -142,27 +152,134 @@ def _scaled(image: Image.Image) -> Image.Image:
     return rgb.resize(size, Image.Resampling.LANCZOS)
 
 
-def _to_lines(result: object) -> list[OcrLine]:
+# Words whose centers sit within this fraction of the line height are one line.
+_SAME_LINE = 0.55
+# An overlap this large means two boxes cut through the same word.
+_OVERLAP = 0.2
+
+
+@dataclass(frozen=True)
+class _Word:
+    text: str
+    score: float
+    top: float
+    bottom: float
+    left: float
+    right: float
+
+    @property
+    def center(self) -> float:
+        return (self.top + self.bottom) / 2
+
+    @property
+    def height(self) -> float:
+        return self.bottom - self.top
+
+
+def _to_lines(
+    result: object,
+    image: Image.Image | None = None,
+    reader: RapidOCR | None = None,
+) -> list[OcrLine]:
+    words = _words(result)
+    if not words:
+        return []
+    lines: list[OcrLine] = []
+    for group in _rows(words):
+        lines.append(_as_line(group, image, reader))
+    lines.sort(key=lambda line: (line.top, line.text))
+    return lines
+
+
+def _words(result: object) -> list[_Word]:
     boxes = getattr(result, "boxes", None)
     texts = getattr(result, "txts", None)
     scores = getattr(result, "scores", None)
     if boxes is None or texts is None or scores is None:
         return []
-    measured: list[tuple[float, float, float, str, float]] = []
+    words: list[_Word] = []
     for box, text, score in zip(boxes, texts, scores):
-        cleaned = str(text).strip()
+        cleaned = unicodedata.normalize("NFKC", str(text)).strip()
         if not cleaned:
             continue
         points = np.asarray(box, dtype=float).reshape(-1, 2)
-        top = float(points[:, 1].min())
-        left = float(points[:, 0].min())
-        height = float(points[:, 1].max() - top)
-        measured.append((top, left, height, cleaned, float(score)))
-    measured.sort(key=lambda item: (item[0], item[1]))
-    return [
-        OcrLine(text=text, confidence=score, height=height, top=top)
-        for top, _left, height, text, score in measured
-    ]
+        words.append(
+            _Word(
+                text=cleaned,
+                score=float(score),
+                top=float(points[:, 1].min()),
+                bottom=float(points[:, 1].max()),
+                left=float(points[:, 0].min()),
+                right=float(points[:, 0].max()),
+            )
+        )
+    return words
+
+
+def _rows(words: list[_Word]) -> list[list[_Word]]:
+    ordered = sorted(words, key=lambda word: (word.center, word.left))
+    rows: list[list[_Word]] = []
+    for word in ordered:
+        if not rows:
+            rows.append([word])
+            continue
+        row = rows[-1]
+        anchor = sum(item.center for item in row) / len(row)
+        height = max(item.height for item in row)
+        if word.center - anchor <= max(8.0, _SAME_LINE * height):
+            row.append(word)
+        else:
+            rows.append([word])
+    return rows
+
+
+def _as_line(row: list[_Word], image: Image.Image | None, reader: RapidOCR | None) -> OcrLine:
+    ordered = sorted(row, key=lambda word: word.left)
+    top = min(word.top for word in ordered)
+    height = max(word.bottom for word in ordered) - top
+    text, score = _read_row(ordered, image, reader)
+    return OcrLine(text=text, confidence=score, height=height, top=top)
+
+
+def _read_row(
+    ordered: list[_Word],
+    image: Image.Image | None,
+    reader: RapidOCR | None,
+) -> tuple[str, float]:
+    joined = unicodedata.normalize("NFKC", " ".join(word.text for word in ordered))
+    score = min(word.score for word in ordered)
+    if image is None or reader is None or not _cuts_a_word(ordered):
+        return joined, score
+    pad = 4
+    left = max(0, int(min(word.left for word in ordered)) - pad)
+    top = max(0, int(min(word.top for word in ordered)) - pad)
+    right = min(image.width, int(max(word.right for word in ordered)) + pad)
+    bottom = min(image.height, int(max(word.bottom for word in ordered)) + pad)
+    if right <= left or bottom <= top:
+        return joined, score
+    recognized = reader(
+        image.crop((left, top, right, bottom)),
+        use_det=False,
+        use_cls=False,
+        use_rec=True,
+    )
+    texts = getattr(recognized, "txts", None) or ()
+    scores = getattr(recognized, "scores", None) or ()
+    reread = unicodedata.normalize("NFKC", " ".join(str(text).strip() for text in texts if str(text).strip()))
+    if not reread:
+        return joined, score
+    return reread, float(min(scores)) if scores else score
+
+
+def _cuts_a_word(ordered: list[_Word]) -> bool:
+    for previous, following in zip(ordered, ordered[1:]):
+        overlap = min(previous.right, following.right) - max(previous.left, following.left)
+        if overlap <= 2:
+            continue
+        smaller = min(previous.right - previous.left, following.right - following.left)
+        if smaller > 0 and overlap / smaller >= _OVERLAP:
+            return True
+    return False
 
 
 def _download(url: str, destination: Path) -> None:

@@ -17,9 +17,12 @@ BLUR_VARIANCE_MIN = 100
 WHITE_LEVEL = 245
 WHITE_FRACTION_MAX = 0.90
 FLAT_STD_MAX = 12
-GLARE_ROW_MEAN = 235
+# Near-white only. Label paper sits around 240 and is not a glare band.
+GLARE_ROW_MEAN = 250
 GLARE_BAND_FRACTION = 0.20
 GLARE_CONTRAST = 40
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 # Long edge of the copy sent to OCR, so CPU time stays predictable.
 OCR_LONG_EDGE = 1600
+# A single check that runs longer than this returns a recoverable timeout.
+SINGLE_LABEL_TIMEOUT = 15

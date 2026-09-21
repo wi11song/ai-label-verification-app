@@ -99,6 +99,18 @@ def test_a_blank_photo_is_washed_out_rather_than_blurry():
     assert check.error is None
 
 
+def test_a_light_label_with_a_blank_gap_can_be_read():
+    # Paper around 239 used to look like a glare band when the gap was tall.
+    image = Image.new("RGB", (800, 1200), (239, 239, 239))
+    draw = ImageDraw.Draw(image)
+    for top in (80, 180, 900, 1000):
+        draw.rectangle((60, top, 700, top + 36), fill=(20, 20, 20))
+    check = check_image(_png(image))
+
+    assert check.readable
+    assert check.note is None
+
+
 def test_a_glare_band_is_washed_out():
     image = _sharp()
     ImageDraw.Draw(image).rectangle((0, 250, 800, 520), fill="white")

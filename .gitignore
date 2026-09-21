@@ -20,3 +20,6 @@ models/
 
 # ONNX Runtime telemetry id, written into the working directory if telemetry is on.
 :memory:.ses
+
+# Independent comparison checkout. Not part of this repo.
+label-verify/

@@ -1,0 +1,8 @@
+image,brand_name,class_type,alcohol_content,net_contents,government_warning,bottler,country_of_origin
+bourbon.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45%,750 mL,,"Bottled by Old Tom Distillery, Bardstown, KY",
+stones_throw.png,Stone's Throw,Straight Rye Whisky,50% Alc./Vol. (100 Proof),750 mL,,"Bottled by Stone's Throw Spirits, Frankfort, KY",
+stones_throw_no_apostrophe.png,Stone's Throw,Straight Rye Whisky,50% Alc./Vol. (100 Proof),750 mL,,"Bottled by Stone's Throw Spirits, Frankfort, KY",
+title_case_warning.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,"Bottled by Old Tom Distillery, Bardstown, KY",
+wrong_abv.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45%,750 mL,,"Bottled by Old Tom Distillery, Bardstown, KY",
+blurry.png,OLD TOM DISTILLERY,Kentucky Straight Bourbon Whiskey,45% Alc./Vol. (90 Proof),750 mL,,"Bottled by Old Tom Distillery, Bardstown, KY",
+imported_gin.png,HARBOUR LIGHT,London Dry Gin,47% Alc./Vol.,1000 mL,,"Imported by Harbour Light Imports, Seattle, WA",Product of England

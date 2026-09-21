@@ -56,6 +56,8 @@ class Application:
 class ExtractedField:
     text: str = ""
     confidence: float | None = None
+    # Set when two OCR lines could fill this field. Comparison then stays Needs review.
+    assignment_note: str | None = None
 
 
 @dataclass

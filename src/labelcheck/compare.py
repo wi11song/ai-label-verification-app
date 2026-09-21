@@ -143,6 +143,9 @@ def _compare_text(
             f"{label} could not be read on this label.",
         )
 
+    if extracted.assignment_note:
+        return _result(name, application, extracted, FieldStatus.NEEDS_REVIEW, extracted.assignment_note)
+
     if not app_text:
         return _result(
             name,
@@ -221,6 +224,8 @@ def _compare_measured(
         return _result(name, application, extracted, FieldStatus.NEEDS_REVIEW, label_ambiguous_reason)
     if ext_status != "ok":
         return _result(name, application, extracted, FieldStatus.UNREADABLE, unreadable_reason)
+    if extracted.assignment_note:
+        return _result(name, application, extracted, FieldStatus.NEEDS_REVIEW, extracted.assignment_note)
 
     if not application.strip():
         return _result(
@@ -269,6 +274,15 @@ def _compare_warning(application: str, extracted: ExtractedField) -> FieldResult
             extracted,
             FieldStatus.UNREADABLE,
             "The government warning could not be read on this label.",
+            emphasis="not_checked",
+        )
+    if extracted.assignment_note:
+        return _result(
+            "government_warning",
+            shown_application,
+            extracted,
+            FieldStatus.NEEDS_REVIEW,
+            extracted.assignment_note,
             emphasis="not_checked",
         )
 

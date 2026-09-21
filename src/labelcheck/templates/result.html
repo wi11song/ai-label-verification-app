@@ -1,0 +1,52 @@
+{% if result and result.error %}
+<section class="banner error" role="alert">
+  <h2>Try again</h2>
+  <p>{{ result.error }}</p>
+  <p class="saved">{{ saved_note|default("Nothing was saved.") }}</p>
+</section>
+{% elif result and result.verdict %}
+<section id="result" class="card">
+  <div class="banner {{ result.verdict.overall.value }}">
+    <h2>{{ status_text[result.verdict.overall.value] }}</h2>
+    <p>{{ result.verdict.summary }}</p>
+  </div>
+  <div class="table-wrap">
+    <table class="fields">
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Application says</th>
+          <th>Label says</th>
+          <th>Result</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in result.verdict.fields %}
+        <tr class="field-{{ item.status.value }}">
+          <th scope="row">{{ labels[item.name] }}</th>
+          <td>{{ item.application }}</td>
+          <td>{{ item.extracted }}</td>
+          <td><span class="pill {{ item.status.value }}">{{ status_text[item.status.value] }}</span></td>
+          <td>{{ item.reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="note">{{ bold_note }}</p>
+  <details>
+    <summary>What the reader saw on the label ({{ result.transcript|length }} lines)</summary>
+    {% if result.transcript %}
+    <ol>
+      {% for line in result.transcript %}
+      <li>{{ line }}</li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p>No lines were read.</p>
+    {% endif %}
+  </details>
+  <p class="saved">Checked in {{ "%.1f"|format(result.seconds) }} seconds. {{ saved_note|default("Nothing was saved.") }}</p>
+</section>
+{% endif %}

@@ -22,6 +22,8 @@ logger = logging.getLogger("labelcheck")
 MISSING_APPLICATION = (
     "Brand, class, alcohol content, and net contents are required before verification."
 )
+CHECK_FAILED = "Verification could not finish. Try again."
+CHECK_TIMEOUT = "Verification took too long. Try again, or use a smaller image."
 _REQUIRED = ("brand_name", "class_type", "alcohol_content", "net_contents")
 
 

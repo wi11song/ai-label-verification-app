@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+{% block main %}
+{% if missing %}
+<section class="banner error" role="alert">
+  <h2>This batch is no longer available</h2>
+  <p>Start a new batch. Results are deleted after {{ keep_minutes }} minutes.</p>
+</section>
+{% endif %}
+{% if error %}
+<section class="banner error" role="alert">
+  <h2>Try again</h2>
+  <p>{{ error }}</p>
+</section>
+{% endif %}
+
+{% if job %}
+<section class="card" id="batch" data-status="/batch/{{ job.id }}/status" data-done="{{ 'true' if job.done else 'false' }}">
+  <h2>{% if job.done %}Batch finished{% else %}Checking labels{% endif %}</h2>
+  <p class="intro"><span id="finished">{{ counts.finished }}</span> of {{ counts.total }} checked</p>
+  <div class="progress" aria-hidden="true">
+    <span id="bar" style="width: {% if counts.total %}{{ (100 * counts.finished / counts.total)|round|int }}{% else %}0{% endif %}%"></span>
+  </div>
+  <div class="counts">
+    <div class="count"><strong id="count-total">{{ counts.total }}</strong> All labels</div>
+    <div class="count pass"><strong id="count-pass">{{ counts.pass }}</strong> Pass</div>
+    <div class="count fail"><strong id="count-fail">{{ counts.fail }}</strong> Fail</div>
+    <div class="count needs_review"><strong id="count-needs_review">{{ counts.needs_review }}</strong> Needs review</div>
+    <div class="count error"><strong id="count-error">{{ counts.error }}</strong> Error</div>
+  </div>
+  <p><a class="action inline" href="/batch">Start a new batch</a></p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Image</th>
+          <th>Brand</th>
+          <th>Result</th>
+          <th>Summary</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in job.items %}
+        <tr data-index="{{ item.index }}">
+          <td>{{ item.index + 1 }}</td>
+          <td>{{ item.image_name }}</td>
+          <td>{{ item.brand }}</td>
+          <td><span class="pill {{ item.state }}" data-state>{{ status_text[item.state] }}</span></td>
+          <td data-summary>{{ item.summary }}</td>
+          <td><a class="action inline" href="/batch/{{ job.id }}/items/{{ item.index }}">Show details</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="saved">Results stay here for {{ keep_minutes }} minutes, then they are deleted.</p>
+</section>
+<script>
+  const root = document.getElementById("batch");
+  const labels = {
+    pass: "Pass", fail: "Fail", needs_review: "Needs review",
+    error: "Error", queued: "Queued", running: "Running"
+  };
+  async function refresh() {
+    const response = await fetch(root.dataset.status, { headers: { "Accept": "application/json" } });
+    if (!response.ok) {
+      window.location.reload();
+      return;
+    }
+    const body = await response.json();
+    document.getElementById("finished").textContent = body.counts.finished;
+    const width = body.counts.total ? Math.round(100 * body.counts.finished / body.counts.total) : 0;
+    document.getElementById("bar").style.width = width + "%";
+    for (const name of ["total", "pass", "fail", "needs_review", "error"]) {
+      document.getElementById("count-" + name).textContent = body.counts[name];
+    }
+    for (const item of body.items) {
+      const row = root.querySelector('tr[data-index="' + item.index + '"]');
+      if (!row) continue;
+      const pill = row.querySelector("[data-state]");
+      pill.className = "pill " + item.state;
+      pill.textContent = labels[item.state] || item.state;
+      row.querySelector("[data-summary]").textContent = item.summary;
+    }
+    if (body.done) {
+      root.querySelector("h2").textContent = "Batch finished";
+      window.clearInterval(timer);
+    }
+  }
+  let timer = 0;
+  if (root.dataset.done !== "true") {
+    timer = window.setInterval(refresh, 1500);
+  }
+</script>
+{% else %}
+<form class="card" method="post" action="/batch" enctype="multipart/form-data">
+  <h2>Check many labels</h2>
+  <p class="intro">Upload a CSV of application rows and the label photos. Or upload one zip that contains both. One photo that cannot be read does not stop the rest.</p>
+  <label for="csv">Application CSV</label>
+  <input id="csv" name="csv" type="file" accept=".csv,text/csv">
+  <p class="hint">Columns: image, brand_name, class_type, alcohol_content, net_contents, government_warning, bottler, country_of_origin. A blank warning uses the standard warning. Up to 300 rows.</p>
+  <label for="images">Label photos</label>
+  <input id="images" name="images" type="file" accept="image/jpeg,image/png,image/webp,image/tiff" multiple>
+  <p class="hint">The file name must match the image column. JPEG, PNG, WEBP, or TIFF. Under 10 MB each.</p>
+  <label for="zip">Or a zip of the CSV and photos</label>
+  <input id="zip" name="zip" type="file" accept=".zip,application/zip">
+  <button type="submit">Start batch</button>
+</form>
+<p class="saved">Results stay for {{ keep_minutes }} minutes, then they are deleted. Nothing else is saved.</p>
+{% endif %}
+{% endblock %}

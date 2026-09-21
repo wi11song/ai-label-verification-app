@@ -1,205 +1,23 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Alcohol Label Check</title>
-  <style>
-    :root {
-      --ink: #1c2430;
-      --muted: #3d4a5c;
-      --navy: #16324f;
-      --line: #d5dbe3;
-      --bg: #f3f5f8;
-      --pass: #0f7a45;
-      --pass-bg: #e8f6ee;
-      --fail: #b42318;
-      --fail-bg: #fdeceb;
-      --review: #8a5a00;
-      --review-bg: #fff6e0;
-      --unread: #3d4a5c;
-      --unread-bg: #eef1f5;
-      --error: #9a3412;
-      --error-bg: #fff1e8;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", system-ui, sans-serif;
-      font-size: 1.125rem;
-      line-height: 1.45;
-      color: var(--ink);
-      background: var(--bg);
-    }
-    header {
-      background: var(--navy);
-      color: white;
-      padding: 1rem 1.5rem;
-    }
-    header h1 { margin: 0; font-size: 1.6rem; }
-    main { max-width: 56rem; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
-    .card {
-      background: white;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 1.25rem;
-    }
-    form.card { margin-top: 1.25rem; }
-    form h2 { margin: 0 0 0.5rem; font-size: 1.4rem; }
-    .intro { margin: 0 0 0.5rem; }
-    label { display: block; font-weight: 700; margin: 1.1rem 0 0.35rem; }
-    .hint { font-weight: 400; color: var(--muted); }
-    input[type="text"], input[type="file"], textarea {
-      width: 100%;
-      font: inherit;
-      padding: 0.75rem;
-      border: 2px solid #8b97a8;
-      border-radius: 8px;
-      background: white;
-    }
-    textarea { min-height: 7rem; resize: vertical; }
-    button {
-      margin-top: 1.4rem;
-      width: 100%;
-      min-height: 3.4rem;
-      font: inherit;
-      font-weight: 700;
-      color: white;
-      background: var(--navy);
-      border: 0;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    button:hover { background: #0f2438; }
-    button:focus, input:focus, textarea:focus {
-      outline: 3px solid #f5b942;
-      outline-offset: 2px;
-    }
-    .banner {
-      border: 2px solid;
-      border-radius: 12px;
-      padding: 1rem 1.25rem;
-      margin-bottom: 1.25rem;
-    }
-    .banner h2 { margin: 0 0 0.35rem; font-size: 1.7rem; }
-    .banner p { margin: 0; }
-    .pass { color: var(--pass); background: var(--pass-bg); border-color: var(--pass); }
-    .fail { color: var(--fail); background: var(--fail-bg); border-color: var(--fail); }
-    .needs_review { color: var(--review); background: var(--review-bg); border-color: var(--review); }
-    .error { color: var(--error); background: var(--error-bg); border-color: var(--error); }
-    .table-wrap { overflow-x: auto; margin-top: 0.5rem; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td {
-      text-align: left;
-      vertical-align: top;
-      padding: 0.75rem 0.6rem;
-      border-bottom: 1px solid var(--line);
-    }
-    table { min-width: 46rem; }
-    thead th {
-      font-size: 0.8rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-    .field-mismatch td:first-child { box-shadow: inset 4px 0 0 var(--fail); }
-    .pill {
-      display: inline-block;
-      font-weight: 700;
-      white-space: nowrap;
-      border: 2px solid currentColor;
-      border-radius: 999px;
-      padding: 0.15rem 0.7rem;
-    }
-    .pill.match { color: var(--pass); background: var(--pass-bg); }
-    .pill.mismatch { color: var(--fail); background: var(--fail-bg); }
-    .pill.needs_review { color: var(--review); background: var(--review-bg); }
-    .pill.unreadable { color: var(--unread); background: var(--unread-bg); }
-    .note, .saved, details { margin: 1rem 0 0; }
-    .note { color: var(--muted); }
-    details summary { font-weight: 700; cursor: pointer; }
-    details ol { margin: 0.5rem 0 0; padding-left: 1.4rem; }
-    .saved { color: var(--muted); }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Alcohol Label Check</h1>
-  </header>
-  <main>
-    {% if result and result.error %}
-    <section class="banner error" role="alert">
-      <h2>Try again</h2>
-      <p>{{ result.error }}</p>
-      <p class="saved">Nothing was saved.</p>
-    </section>
-    {% elif result and result.verdict %}
-    <section id="result" class="card">
-      <div class="banner {{ result.verdict.overall.value }}">
-        <h2>{{ status_text[result.verdict.overall.value] }}</h2>
-        <p>{{ result.verdict.summary }}</p>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Field</th>
-              <th>Application says</th>
-              <th>Label says</th>
-              <th>Result</th>
-              <th>Why</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in result.verdict.fields %}
-            <tr class="field-{{ item.status.value }}">
-              <th scope="row">{{ labels[item.name] }}</th>
-              <td>{{ item.application }}</td>
-              <td>{{ item.extracted }}</td>
-              <td><span class="pill {{ item.status.value }}">{{ status_text[item.status.value] }}</span></td>
-              <td>{{ item.reason }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <p class="note">{{ bold_note }}</p>
-      <details>
-        <summary>What the reader saw on the label ({{ result.transcript|length }} lines)</summary>
-        {% if result.transcript %}
-        <ol>
-          {% for line in result.transcript %}
-          <li>{{ line }}</li>
-          {% endfor %}
-        </ol>
-        {% else %}
-        <p>No lines were read.</p>
-        {% endif %}
-      </details>
-      <p class="saved">Checked in {{ "%.1f"|format(result.seconds) }} seconds. Nothing was saved.</p>
-    </section>
-    {% endif %}
-
-    <form class="card" method="post" action="/verify" enctype="multipart/form-data">
-      <h2>Check a label</h2>
-      <p class="intro">Upload a label photo and the application fields. Press Verify. The result stays on this page.</p>
-      <label for="image">Label photo</label>
-      <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/tiff">
-      <p class="hint">JPEG, PNG, WEBP, or TIFF. The photo is used for this check only.</p>
-      {% for field in fields %}
-      <label for="{{ field.name }}">
-        {{ field.label }}
-        {% if field.required %}<span class="hint">(required)</span>{% elif field.hint %}<span class="hint">{{ field.hint }}</span>{% endif %}
-      </label>
-      {% if field.multiline %}
-      <textarea id="{{ field.name }}" name="{{ field.name }}" placeholder="{{ field.placeholder }}">{{ values[field.name] }}</textarea>
-      {% else %}
-      <input id="{{ field.name }}" name="{{ field.name }}" type="text" value="{{ values[field.name] }}" placeholder="{{ field.placeholder }}">
-      {% endif %}
-      {% endfor %}
-      <button type="submit">Verify</button>
-    </form>
-  </main>
-</body>
-</html>
+{% extends "layout.html" %}
+{% block main %}
+{% include "result.html" %}
+<form class="card" method="post" action="/verify" enctype="multipart/form-data">
+  <h2>Check a label</h2>
+  <p class="intro">Upload a label photo and the application fields. Press Verify. The result stays on this page.</p>
+  <label for="image">Label photo</label>
+  <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/tiff">
+  <p class="hint">JPEG, PNG, WEBP, or TIFF. The photo is used for this check only.</p>
+  {% for field in fields %}
+  <label for="{{ field.name }}">
+    {{ field.label }}
+    {% if field.required %}<span class="hint">(required)</span>{% elif field.hint %}<span class="hint">{{ field.hint }}</span>{% endif %}
+  </label>
+  {% if field.multiline %}
+  <textarea id="{{ field.name }}" name="{{ field.name }}" placeholder="{{ field.placeholder }}">{{ values[field.name] }}</textarea>
+  {% else %}
+  <input id="{{ field.name }}" name="{{ field.name }}" type="text" value="{{ values[field.name] }}" placeholder="{{ field.placeholder }}">
+  {% endif %}
+  {% endfor %}
+  <button type="submit">Verify</button>
+</form>
+{% endblock %}

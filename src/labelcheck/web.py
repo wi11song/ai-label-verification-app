@@ -12,17 +12,24 @@ from starlette.responses import Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
+from labelcheck.batch import (
+    BOTH_INPUTS,
+    CHOOSE_INPUT,
+    DUPLICATE_NAME,
+    BatchError,
+    BatchStore,
+    read_zip,
+)
 from labelcheck.models import FIELD_LABELS, Application
 from labelcheck.quality import IMAGE_TOO_LARGE
-from labelcheck.thresholds import MAX_IMAGE_BYTES, SINGLE_LABEL_TIMEOUT
-from labelcheck.verify import Verification, verify_label
+from labelcheck.thresholds import BATCH_JOB_SECONDS, BATCH_MAX_ITEMS, BATCH_ZIP_BYTES, MAX_IMAGE_BYTES, SINGLE_LABEL_TIMEOUT
+from labelcheck.verify import CHECK_FAILED, CHECK_TIMEOUT, Verification, verify_label
 
 logger = logging.getLogger("labelcheck")
 
 CHOOSE_PHOTO = "Choose a label photo, then press Verify."
-CHECK_FAILED = "Verification could not finish. Try again."
-CHECK_TIMEOUT = "Verification took too long. Try again, or use a smaller image."
 BOLD_NOTE = "Bold type on “GOVERNMENT WARNING:” was not checked by this prototype."
+BATCH_UPLOAD_TOO_LARGE = "This upload is too large. A photo must be under 10 MB, and a zip under 200 MB."
 
 STATUS_TEXT = {
     "pass": "Pass",
@@ -31,6 +38,9 @@ STATUS_TEXT = {
     "match": "Match",
     "mismatch": "Does not match",
     "unreadable": "Unreadable",
+    "queued": "Queued",
+    "running": "Running",
+    "error": "Error",
 }
 
 FIELDS = (
@@ -93,11 +103,18 @@ FIELDS = (
 )
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
-_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="labelcheck")
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
-def create_app(*, reader=None, timeout: float = SINGLE_LABEL_TIMEOUT) -> Starlette:
+def create_app(
+    *,
+    reader=None,
+    timeout: float = SINGLE_LABEL_TIMEOUT,
+    batch_lifetime: float = BATCH_JOB_SECONDS,
+) -> Starlette:
+    executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="labelcheck")
+    store = BatchStore(executor, reader=reader, timeout=timeout, lifetime=batch_lifetime)
+
     async def home(request: Request) -> Response:
         return _render(request, _blank_form(), None)
 
@@ -114,15 +131,77 @@ def create_app(*, reader=None, timeout: float = SINGLE_LABEL_TIMEOUT) -> Starlet
             data = await upload.read()
         finally:
             await upload.close()
-        result = _run_check(data, _application(values), reader=reader, timeout=timeout)
+        result = _run_check(data, _application(values), reader=reader, timeout=timeout, executor=executor)
         return _render(request, values, result)
 
-    return Starlette(
+    async def batch_form(request: Request) -> Response:
+        return _render_batch(request, error=None, job=None)
+
+    async def batch_start(request: Request) -> Response:
+        try:
+            form = await request.form(
+                max_files=BATCH_MAX_ITEMS + 2,
+                max_fields=20,
+                max_part_size=BATCH_ZIP_BYTES,
+            )
+        except MultiPartException:
+            return _render_batch(request, error=BATCH_UPLOAD_TOO_LARGE, job=None)
+        try:
+            csv_bytes, images = await _batch_inputs(form)
+            job = store.create(csv_bytes, images)
+        except BatchError as exc:
+            return _render_batch(request, error=str(exc), job=None)
+        return Response(status_code=303, headers={"Location": f"/batch/{job.id}", **_NO_STORE})
+
+    async def batch_progress(request: Request) -> Response:
+        job = store.get(request.path_params["job_id"])
+        if job is None:
+            return _render_batch(request, error=None, job=None, missing=True)
+        return _render_batch(request, error=None, job=job)
+
+    async def batch_status(request: Request) -> Response:
+        from starlette.responses import JSONResponse
+
+        job = store.get(request.path_params["job_id"])
+        if job is None:
+            return JSONResponse({"error": "This batch is no longer available."}, status_code=404, headers=_NO_STORE)
+        return JSONResponse(store.snapshot(job), headers=_NO_STORE)
+
+    async def batch_item(request: Request) -> Response:
+        job = store.get(request.path_params["job_id"])
+        index = request.path_params["index"]
+        if job is None or not isinstance(index, int) or index < 0 or index >= len(job.items):
+            return _render_batch(request, error=None, job=None, missing=True)
+        with job.lock:
+            item = job.items[index]
+        return _TEMPLATES.TemplateResponse(
+            request,
+            "batch_item.html",
+            {
+                "page": "batch",
+                "job": job,
+                "item": item,
+                "labels": FIELD_LABELS,
+                "status_text": STATUS_TEXT,
+                "bold_note": BOLD_NOTE,
+                "saved_note": f"Results from this batch are deleted after {BATCH_JOB_SECONDS // 60} minutes.",
+            },
+            headers=_NO_STORE,
+        )
+
+    app = Starlette(
         routes=[
             Route("/", home, methods=["GET"]),
             Route("/verify", check, methods=["POST"]),
+            Route("/batch", batch_form, methods=["GET"]),
+            Route("/batch", batch_start, methods=["POST"]),
+            Route("/batch/{job_id}", batch_progress, methods=["GET"]),
+            Route("/batch/{job_id}/status", batch_status, methods=["GET"]),
+            Route("/batch/{job_id}/items/{index:int}", batch_item, methods=["GET"]),
         ]
     )
+    app.state.batches = store
+    return app
 
 
 def _render(request: Request, values: dict[str, str], result: Verification | None) -> Response:
@@ -130,6 +209,7 @@ def _render(request: Request, values: dict[str, str], result: Verification | Non
         request,
         "check.html",
         {
+            "page": "single",
             "fields": FIELDS,
             "values": values,
             "result": result,
@@ -141,9 +221,67 @@ def _render(request: Request, values: dict[str, str], result: Verification | Non
     )
 
 
-def _run_check(data: bytes, application: Application, *, reader, timeout: float) -> Verification:
+def _render_batch(request: Request, *, error: str | None, job, missing: bool = False) -> Response:
+    counts = request.app.state.batches.counts(job) if job is not None else None
+    status = 404 if missing else 200
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "batch.html",
+        {
+            "page": "batch",
+            "error": error,
+            "job": job,
+            "counts": counts,
+            "missing": missing,
+            "status_text": STATUS_TEXT,
+            "keep_minutes": BATCH_JOB_SECONDS // 60,
+        },
+        status_code=status,
+        headers=_NO_STORE,
+    )
+
+
+async def _batch_inputs(form) -> tuple[bytes, dict[str, bytes]]:
+    csv_upload = _named_upload(form.get("csv"))
+    zip_upload = _named_upload(form.get("zip"))
+    photos = [_named_upload(item) for item in form.getlist("images")]
+    photos = [item for item in photos if item is not None]
+    if zip_upload is not None and (csv_upload is not None or photos):
+        raise BatchError(BOTH_INPUTS)
+    if zip_upload is not None:
+        try:
+            data = await zip_upload.read()
+        finally:
+            await zip_upload.close()
+        return read_zip(data)
+    if csv_upload is None:
+        raise BatchError(CHOOSE_INPUT)
+    try:
+        csv_bytes = await csv_upload.read()
+    finally:
+        await csv_upload.close()
+    images: dict[str, bytes] = {}
+    for upload in photos:
+        name = Path(upload.filename).name
+        if name in images:
+            raise BatchError(DUPLICATE_NAME)
+        try:
+            data = await upload.read()
+        finally:
+            await upload.close()
+        images[name] = data
+    return csv_bytes, images
+
+
+def _named_upload(upload):
+    if upload is None or not getattr(upload, "filename", None):
+        return None
+    return upload
+
+
+def _run_check(data: bytes, application: Application, *, reader, timeout: float, executor) -> Verification:
     kwargs = {"reader": reader} if reader is not None else {}
-    future = _EXECUTOR.submit(verify_label, data, application, **kwargs)
+    future = executor.submit(verify_label, data, application, **kwargs)
     try:
         return future.result(timeout=timeout)
     except FuturesTimeoutError:

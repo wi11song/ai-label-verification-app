@@ -26,3 +26,8 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 OCR_LONG_EDGE = 1600
 # A single check that runs longer than this returns a recoverable timeout.
 SINGLE_LABEL_TIMEOUT = 15
+# A batch is an in-memory job. Files and rows are deleted after this long.
+BATCH_MAX_ITEMS = 300
+BATCH_JOB_SECONDS = 60 * 60
+# Checked before a zip is opened.
+BATCH_ZIP_BYTES = 200 * 1024 * 1024

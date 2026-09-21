@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+{% block main %}
+<p><a class="action inline" href="/batch/{{ job.id }}">Back to the batch</a></p>
+<h2>{{ item.image_name or "This row" }}</h2>
+{% if item.result %}
+{% with result=item.result %}
+{% include "result.html" %}
+{% endwith %}
+{% else %}
+<section class="banner {{ item.state }}" role="status">
+  <h2>{{ status_text[item.state] }}</h2>
+  <p>{{ item.summary }}</p>
+</section>
+{% endif %}
+{% endblock %}

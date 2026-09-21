@@ -1,3 +1,123 @@
+# Alcohol Label Check
+
+A local web app that reads an alcohol-label photo and compares it with the application a reviewer typed or uploaded. It checks brand, class/type, alcohol content, net contents, and the government warning. Bottler and country of origin are checked when the application or the label includes them.
+
+The reader is RapidOCR with the PP-OCRv5 mobile models on ONNX Runtime, in the same process as the page. A check does not call a cloud vision API. A warm label on a 2-CPU container comes back in under 5 seconds. The bourbon sample in `samples/` returned Pass in about 1.7 seconds.
+
+Three verdicts: **Pass**, **Fail**, and **Needs review**. A photo that is too small, blurry, or washed out is Needs review. It is not reported as a failed label.
+
+Nothing is stored for long. A single check keeps the photo only while it runs. A batch stays in memory for 60 minutes, then the rows and photos are deleted.
+
+## Run it
+
+Docker is the setup that matches the image used in CI. The first start downloads the pinned model files into the image. Later starts do not.
+
+```bash
+docker compose up --build
+```
+
+Open http://localhost:8000. The process listens on `PORT` (default 8000). Run one copy. Batch jobs live in that process, so a second replica would not see them.
+
+To run from a virtual environment instead:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+python -c "from labelcheck.ocr import download_models; download_models()"
+python -m labelcheck
+```
+
+On Linux, RapidOCR needs `libgl1` and `libglib2.0-0`. The model files land in `models/`, which is not part of the git repo. `download_models()` checks the published SHA-256 before it keeps a file.
+
+### Check one label
+
+Open **Check one label**. Upload a photo and enter the brand, class/type, alcohol content, and net contents. Leave the government warning blank to compare the label with the statutory text. Press **Verify**. The result stays on that page.
+
+`samples/bourbon.png` with brand `OLD TOM DISTILLERY`, class `Kentucky Straight Bourbon Whiskey`, alcohol `45%`, net contents `750 mL`, and bottler `Bottled by Old Tom Distillery, Bardstown, KY` is a Pass.
+
+### Check a batch
+
+Open **Check many labels**. Upload `samples/demo_batch.csv` and the photos in `samples/`, or one zip that contains the CSV and the photos. The image column must match each file name. Up to 300 rows. At most two labels are read at a time. One bad file does not stop the rest.
+
+CSV columns: `image`, `brand_name`, `class_type`, `alcohol_content`, `net_contents`, `government_warning`, `bottler`, `country_of_origin`. A blank warning cell means the statutory text.
+
+## Tests
+
+```bash
+.venv/bin/pytest
+```
+
+Comparison, parsing, and page tests do not load the model. The two tests that read a real label are skipped unless `models/` is present. After `docker compose up`, this checks the running app against the bourbon sample and expects Pass within 5 seconds:
+
+```bash
+bash scripts/smoke_test.sh http://127.0.0.1:8000
+```
+
+GitHub Actions runs the test suite on every pull request and every push to `main`, then builds the image and runs that smoke test on 2 CPUs and 4 GB of memory. A push to `main` also publishes `ghcr.io/wi11song/ai-label-verification-app`.
+
+## How it works
+
+```
+photo → quality gate → OCR lines → field parser → comparison → Pass / Fail / Needs review
+```
+
+If the gate says the photo cannot be read, OCR does not run.
+
+| Module | Role |
+|---|---|
+| `quality.py` | Rejects a bad file. Flags a photo that is too small, blurry, blank, or washed out. |
+| `ocr.py` | The only module that imports the OCR runtime. Loads the pinned PP-OCRv5 mobile weights from disk. |
+| `parse.py` | Assigns lines to fields. A line already used is not reused as the brand. |
+| `normalize.py`, `compare.py` | Comparison rules for each field. |
+| `decide.py` | Turns the field results into Pass, Fail, or Needs review. |
+| `verify.py` | One label: gate, then OCR, then comparison. |
+| `batch.py` | In-memory jobs, two at a time, zip path checks, 60-minute expiry. |
+| `web.py` | The pages. |
+
+A confident mismatch is Fail. An unreadable or uncertain field is Needs review. Otherwise the label passes. A low-confidence read is never treated as a match.
+
+Brand comparison ignores case, apostrophe style, and extra whitespace. `STONE'S THROW` matches `Stone's Throw`. A missing apostrophe is Needs review, not a match. Alcohol treats US proof as twice the percent, so `45%` matches `45% Alc./Vol. (90 Proof)`. Net contents accept mL, L, and fl oz. The warning must match the statutory wording, including capitals. Line breaks may be joined. Bold type on `GOVERNMENT WARNING:` is not checked, and the page says so.
+
+## Approach and trade-offs
+
+The reader is a small local model rather than a cloud vision API or a vision-language model. It stays inside the latency budget on CPU, it still runs if outbound network is blocked, and each line comes back with a confidence score. It is weaker on odd layouts. Those photos should land on Needs review instead of a wrong Pass.
+
+A blurry or glaring photo is Needs review because the label itself may be fine. Fail means a field was read clearly and disagrees with the application.
+
+The application has to be typed or uploaded. COLA is not connected. There are no accounts, and application text is not written to a database.
+
+Batch work shares a pool of two checks with the single-label page, so a long batch does not occupy every core. Jobs are stored in the process. A restart drops a batch that is still running. That is acceptable for a prototype, and it is why the container should stay at one replica.
+
+The detector returns words, not whole lines, so words on the same row are joined before the fields are assigned. The glare check treats only a near-white band as glare, because the cream paper on these labels sits just under the old cutoff and was being skipped. ONNX Runtime is limited to two threads. A CPU cap does not change the CPU count the process sees, and extra threads missed the 5-second budget.
+
+## Assumptions and limitations
+
+- Reviewers supply the application by form or CSV.
+- Match for fields other than the warning is normalized text, not identical pixels.
+- US proof is the alcohol equivalence used here.
+- Beverage-specific TTB exceptions, such as some wine and beer ABV rules, are not implemented. Class words are only used to find a line.
+- The sample labels are flat artwork, not bottle photos. A steep angle or heavy glare should come back as Needs review. Deskew is not implemented.
+- Bold type on the warning is not checked.
+- There is no login. The limits are file size (10 MB), batch size (300), zip size (200 MB), and a 15-second timeout on one label.
+
+## Deploy
+
+A public URL is not published yet. The container is what a host should run: one replica, about 2 vCPU and 4 GB, health check `GET /`. The image build is allowed to download the model files. The running container does not.
+
+Azure Container Apps would fit a TTB Azure environment, and it does not need Azure AI services. This repository does not deploy there. To publish elsewhere, point the host at `Dockerfile`, set the instance to one replica, and set the health check to `GET /`. Keep the instance warm so the first visitor does not wait for the model to load.
+
+After a push to `main`, the image is `ghcr.io/wi11song/ai-label-verification-app:latest`.
+
+```bash
+docker pull ghcr.io/wi11song/ai-label-verification-app:latest
+docker run --rm -p 8000:8000 --cpus 2 --memory 4g ghcr.io/wi11song/ai-label-verification-app:latest
+```
+
+## Assignment notes
+
+The sections below are the original assignment, including the discovery interviews referred to from `SYSTEMS_DESIGN.md`.
+
 # **Take-Home Project: AI-Powered Alcohol Label Verification App**
 
 ## **Project Background & Stakeholder Context**
@@ -115,4 +235,3 @@ We understand this is time-constrained. A working core application with clean co
 *Questions? Reach out for clarification—though we also value how you fill in gaps independently.*
 
 Good luck!
-```

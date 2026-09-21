@@ -23,6 +23,58 @@ def test_bourbon_sample_passes():
     assert warning.reason == "Warning text matches. Bold was not checked."
 
 
+def test_a_heavier_warning_prefix_matches():
+    verdict = compare_label(
+        bourbon_application(),
+        bourbon_extracted(government_warning=field(STATUTORY_WARNING, emphasis="match")),
+    )
+
+    warning = _item(verdict, "government_warning")
+    assert warning.status is FieldStatus.MATCH
+    assert warning.emphasis == "match"
+    assert "heavier" in warning.reason
+    assert "Bold was not checked" not in warning.reason
+    assert verdict.overall is OverallStatus.PASS
+
+
+def test_a_same_weight_warning_prefix_fails():
+    verdict = compare_label(
+        bourbon_application(),
+        bourbon_extracted(government_warning=field(STATUTORY_WARNING, emphasis="mismatch")),
+    )
+
+    warning = _item(verdict, "government_warning")
+    assert warning.status is FieldStatus.MISMATCH
+    assert warning.emphasis == "mismatch"
+    assert verdict.overall is OverallStatus.FAIL
+
+
+def test_an_inconclusive_bold_check_needs_review_when_the_words_match():
+    verdict = compare_label(
+        bourbon_application(),
+        bourbon_extracted(government_warning=field(STATUTORY_WARNING, emphasis="inconclusive")),
+    )
+
+    warning = _item(verdict, "government_warning")
+    assert warning.status is FieldStatus.NEEDS_REVIEW
+    assert warning.emphasis == "inconclusive"
+    assert verdict.overall is OverallStatus.NEEDS_REVIEW
+
+
+def test_a_lowercased_prefix_does_not_fail_because_of_emphasis():
+    title_case = STATUTORY_WARNING.replace("GOVERNMENT WARNING:", "Government Warning:", 1)
+    verdict = compare_label(
+        bourbon_application(),
+        bourbon_extracted(government_warning=field(title_case, emphasis="mismatch")),
+    )
+
+    warning = _item(verdict, "government_warning")
+    assert warning.emphasis == "inconclusive"
+    assert warning.status is FieldStatus.MISMATCH
+    assert "not heavier" not in warning.reason
+    assert verdict.overall is OverallStatus.FAIL
+
+
 def test_result_lists_application_extracted_status_and_reason():
     payload = compare_label(bourbon_application(), bourbon_extracted()).to_dict()
 

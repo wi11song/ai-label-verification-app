@@ -21,7 +21,8 @@ _BOTTLER = re.compile(
 )
 _CLASS_WORD = re.compile(
     r"\b(bourbons?|whisk(?:ey|ies|ys?)|vodkas?|gins?|rums?|tequilas?|brand(?:y|ies)|"
-    r"wines?|beers?|ales?|lagers?|stouts?|porters?|ryes?|mezcals?|cognacs?|liqueurs?|ciders?)\b",
+    r"wines?|beers?|ales?|lagers?|stouts?|porters?|ryes?|mezcals?|cognacs?|liqueurs?|ciders?|"
+    r"sakes?|sojus?|vermouths?)\b",
     re.IGNORECASE,
 )
 
@@ -42,6 +43,12 @@ class OcrLine:
     confidence: float
     height: float = 0
     top: float = 0
+    # Box of the whole line, then the warning prefix and a body sample, in image pixels.
+    box: tuple[float, float, float, float] | None = None
+    prefix_box: tuple[float, float, float, float] | None = None
+    body_box: tuple[float, float, float, float] | None = None
+    # match, mismatch, or inconclusive. None means the bold check did not run.
+    emphasis: str | None = None
 
 
 def parse_lines(lines: list[OcrLine]) -> ExtractedLabel:
@@ -106,10 +113,12 @@ def _claim_brand(pool: list[OcrLine]) -> ExtractedField:
 
 
 def _as_field(lines: list[OcrLine], note: str | None) -> ExtractedField:
+    emphasis = next((line.emphasis for line in lines if line.emphasis), None)
     return ExtractedField(
         text="\n".join(line.text.strip() for line in lines),
         confidence=min(line.confidence for line in lines),
         assignment_note=note,
+        emphasis=emphasis,
     )
 
 

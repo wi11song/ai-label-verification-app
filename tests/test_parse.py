@@ -112,3 +112,15 @@ def test_title_case_warning_line_is_still_captured_and_fails():
     assert warning.extracted.startswith("Government Warning:")
     assert warning.status is FieldStatus.MISMATCH
     assert verdict.overall is OverallStatus.FAIL
+
+
+def test_sake_soju_and_vermouth_are_class_lines():
+    for text in ("Junmai Sake", "Soju", "Dry Vermouth"):
+        extracted = parse_lines(
+            [
+                line("CEDAR HOUSE", height=48, top=10),
+                line(text, height=22, top=80),
+            ]
+        )
+        assert extracted.class_type.text == text
+        assert extracted.brand_name.text == "CEDAR HOUSE"

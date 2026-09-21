@@ -12,7 +12,7 @@ import os
 import threading
 import unicodedata
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 os.environ["ORT_DISABLE_TELEMETRY"] = "1"
@@ -24,7 +24,8 @@ from rapidocr import EngineType, ModelType, OCRVersion, RapidOCR
 
 onnxruntime.disable_telemetry_events()
 
-from labelcheck.parse import OcrLine
+from labelcheck.emphasis import boxes_overlap, compare_crops
+from labelcheck.parse import OcrLine, _is_non_warning_anchor
 from labelcheck.thresholds import OCR_LONG_EDGE
 
 # PP-OCRv5 mobile, RapidOCR ONNX build v3.9.2. Checksums are the published SHA-256.
@@ -98,7 +99,7 @@ def read_lines(image: Image.Image, engine: RapidOCR | None = None) -> list[OcrLi
         # leave detection turned off for the next label.
         detected = reader(prepared, use_det=True, use_cls=False, use_rec=True)
         return _to_lines(detected, image=prepared, reader=reader)
-    return _to_lines(engine(prepared))
+    return _to_lines(engine(prepared), image=prepared)
 
 
 def get_engine() -> RapidOCR:
@@ -188,7 +189,7 @@ def _to_lines(
     for group in _rows(words):
         lines.append(_as_line(group, image, reader))
     lines.sort(key=lambda line: (line.top, line.text))
-    return lines
+    return _mark_emphasis(lines, image)
 
 
 def _words(result: object) -> list[_Word]:
@@ -238,7 +239,89 @@ def _as_line(row: list[_Word], image: Image.Image | None, reader: RapidOCR | Non
     top = min(word.top for word in ordered)
     height = max(word.bottom for word in ordered) - top
     text, score = _read_row(ordered, image, reader)
-    return OcrLine(text=text, confidence=score, height=height, top=top)
+    prefix_words, body_words, cut = _prefix_split(ordered)
+    emphasis = "inconclusive" if cut and prefix_words else None
+    return OcrLine(
+        text=text,
+        confidence=score,
+        height=height,
+        top=top,
+        box=_union(ordered),
+        prefix_box=_union(prefix_words) if prefix_words else None,
+        body_box=_union(body_words) if body_words else None,
+        emphasis=emphasis,
+    )
+
+
+def _mark_emphasis(lines: list[OcrLine], image: Image.Image | None) -> list[OcrLine]:
+    """Crop the warning prefix and a body line, then record which stroke is heavier."""
+    if image is None:
+        return lines
+    for index, line in enumerate(lines):
+        if "government warning" not in line.text.casefold():
+            continue
+        if line.emphasis == "inconclusive" or line.prefix_box is None:
+            return lines
+        body_box = _body_sample(lines, index, line)
+        if body_box is None or boxes_overlap(line.prefix_box, body_box):
+            emphasis = "inconclusive"
+        elif not _exact_prefix(line.text):
+            emphasis = "inconclusive"
+        else:
+            emphasis = compare_crops(_crop(image, line.prefix_box), _crop(image, body_box))
+        lines[index] = replace(line, body_box=body_box, emphasis=emphasis)
+        return lines
+    return lines
+
+
+def _prefix_split(ordered: list[_Word]) -> tuple[list[_Word], list[_Word], bool]:
+    """Prefix words, the rest of the line, and whether one word holds both."""
+    taken: list[_Word] = []
+    accumulated = ""
+    for index, word in enumerate(ordered):
+        accumulated = f"{accumulated} {word.text}".strip()
+        taken.append(word)
+        folded = " ".join(accumulated.split()).casefold()
+        at = folded.find("government warning")
+        if at < 0:
+            continue
+        tail = folded[at + len("government warning") :].strip(" :.")
+        return taken, list(ordered[index + 1 :]), bool(tail)
+    return [], [], False
+
+
+def _body_sample(lines: list[OcrLine], index: int, line: OcrLine) -> tuple[float, float, float, float] | None:
+    for later in lines[index + 1 :]:
+        if later.box is None:
+            continue
+        if _is_non_warning_anchor(later.text):
+            break
+        return later.box
+    return line.body_box
+
+
+def _exact_prefix(text: str) -> bool:
+    return " ".join(text.split()).startswith("GOVERNMENT WARNING:")
+
+
+def _union(words: list[_Word]) -> tuple[float, float, float, float]:
+    return (
+        min(word.left for word in words),
+        min(word.top for word in words),
+        max(word.right for word in words),
+        max(word.bottom for word in words),
+    )
+
+
+def _crop(image: Image.Image, box: tuple[float, float, float, float]) -> Image.Image:
+    pad = 1
+    left = max(0, int(box[0]) - pad)
+    top = max(0, int(box[1]) - pad)
+    right = min(image.width, int(box[2]) + pad)
+    bottom = min(image.height, int(box[3]) + pad)
+    if right <= left or bottom <= top:
+        return image.crop((0, 0, 1, 1))
+    return image.crop((left, top, right, bottom))
 
 
 def _read_row(

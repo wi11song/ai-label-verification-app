@@ -58,6 +58,8 @@ class ExtractedField:
     confidence: float | None = None
     # Set when two OCR lines could fill this field. Comparison then stays Needs review.
     assignment_note: str | None = None
+    # Warning only: match, mismatch, or inconclusive. None means bold was not checked.
+    emphasis: str | None = None
 
 
 @dataclass

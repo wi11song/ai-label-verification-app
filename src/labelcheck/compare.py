@@ -1,7 +1,7 @@
 """Compare application values to extracted label fields.
 
 Rules follow SOFTWARE_REQUIREMENTS.md FR-8 through FR-14 and the system design.
-Bold on the government warning is not checked in this version.
+Bold on the government warning is checked when OCR kept a prefix box and a body box.
 """
 
 import re
@@ -44,6 +44,15 @@ _VOLUME = re.compile(
 )
 
 WARNING_MATCH_REASON = "Warning text matches. Bold was not checked."
+WARNING_EMPHASIS_MATCH_REASON = (
+    "Warning text matches, and “GOVERNMENT WARNING:” is heavier than the rest of the warning."
+)
+WARNING_EMPHASIS_MISMATCH_REASON = (
+    "The warning text matches, but “GOVERNMENT WARNING:” is not heavier than the rest of the warning."
+)
+WARNING_EMPHASIS_UNCLEAR_REASON = (
+    "The warning text matches, but bold type on “GOVERNMENT WARNING:” could not be judged."
+)
 WARNING_MISMATCH_REASON = (
     "The warning must start with GOVERNMENT WARNING: in all caps, "
     "and the remaining text must match exactly."
@@ -288,15 +297,9 @@ def _compare_warning(application: str, extracted: ExtractedField) -> FieldResult
 
     label_ok = collapse_whitespace(ext_text) == STATUTORY_WARNING
     application_ok = collapse_whitespace(ext_text) == collapse_whitespace(shown_application)
+    recorded = _recorded_emphasis(ext_text, extracted.emphasis)
     if label_ok and application_ok:
-        return _result(
-            "government_warning",
-            shown_application,
-            extracted,
-            FieldStatus.MATCH,
-            WARNING_MATCH_REASON,
-            emphasis="not_checked",
-        )
+        return _matched_warning(shown_application, extracted, recorded)
     if band == "medium":
         return _result(
             "government_warning",
@@ -304,7 +307,7 @@ def _compare_warning(application: str, extracted: ExtractedField) -> FieldResult
             extracted,
             FieldStatus.NEEDS_REVIEW,
             WARNING_REVIEW_REASON,
-            emphasis="not_checked",
+            emphasis=recorded,
         )
     reason = WARNING_MISMATCH_REASON if not label_ok else WARNING_APPLICATION_MISMATCH_REASON
     return _result(
@@ -313,8 +316,55 @@ def _compare_warning(application: str, extracted: ExtractedField) -> FieldResult
         extracted,
         FieldStatus.MISMATCH,
         reason,
+        emphasis=recorded,
+    )
+
+
+def _matched_warning(application: str, extracted: ExtractedField, recorded: str) -> FieldResult:
+    if recorded == "mismatch":
+        return _result(
+            "government_warning",
+            application,
+            extracted,
+            FieldStatus.MISMATCH,
+            WARNING_EMPHASIS_MISMATCH_REASON,
+            emphasis="mismatch",
+        )
+    if recorded == "inconclusive":
+        return _result(
+            "government_warning",
+            application,
+            extracted,
+            FieldStatus.NEEDS_REVIEW,
+            WARNING_EMPHASIS_UNCLEAR_REASON,
+            emphasis="inconclusive",
+        )
+    if recorded == "match":
+        return _result(
+            "government_warning",
+            application,
+            extracted,
+            FieldStatus.MATCH,
+            WARNING_EMPHASIS_MATCH_REASON,
+            emphasis="match",
+        )
+    return _result(
+        "government_warning",
+        application,
+        extracted,
+        FieldStatus.MATCH,
+        WARNING_MATCH_REASON,
         emphasis="not_checked",
     )
+
+
+def _recorded_emphasis(text: str, measured: str | None) -> str:
+    """A lowercased prefix is inconclusive, so emphasis alone does not fail the label."""
+    if measured not in {"match", "mismatch", "inconclusive"}:
+        return "not_checked"
+    if not collapse_whitespace(text).startswith("GOVERNMENT WARNING:"):
+        return "inconclusive"
+    return measured
 
 
 def _result(

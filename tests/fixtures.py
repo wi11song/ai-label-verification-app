@@ -5,8 +5,13 @@ from labelcheck.parse import OcrLine
 from labelcheck.statute import STATUTORY_WARNING
 
 
-def field(text: str, confidence: float | None = 0.95, note: str | None = None) -> ExtractedField:
-    return ExtractedField(text=text, confidence=confidence, assignment_note=note)
+def field(
+    text: str,
+    confidence: float | None = 0.95,
+    note: str | None = None,
+    emphasis: str | None = None,
+) -> ExtractedField:
+    return ExtractedField(text=text, confidence=confidence, assignment_note=note, emphasis=emphasis)
 
 
 def bourbon_application(**overrides: str) -> Application:

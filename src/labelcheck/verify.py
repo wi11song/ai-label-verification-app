@@ -1,6 +1,7 @@
-"""One label: quality gate, then OCR, then the comparison rules.
+"""One label: quality gate, then a light deskew, then OCR, then the comparison rules.
 
 OCR does not run when the file is unusable or the photo cannot be read.
+An uncertain tilt is left as shot.
 """
 
 import logging
@@ -12,6 +13,7 @@ from io import BytesIO
 from PIL import Image, ImageOps
 
 from labelcheck.compare import compare_label
+from labelcheck.deskew import deskew
 from labelcheck.models import Application, LabelVerdict
 from labelcheck.ocr import read_lines
 from labelcheck.parse import OcrLine, parse_lines
@@ -58,7 +60,7 @@ def verify_label(
         result = Verification(error=MISSING_APPLICATION)
     else:
         try:
-            image = _upright(data)
+            image = deskew(_upright(data))
         except (OSError, ValueError):
             result = Verification(error=UNSUPPORTED_IMAGE)
         else:

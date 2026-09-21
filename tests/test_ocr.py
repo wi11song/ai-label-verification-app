@@ -134,6 +134,43 @@ def test_the_bourbon_sample_is_read_and_passes():
     assert brand.extracted == "OLD TOM DISTILLERY"
 
 
+_EXTRA = Path(__file__).resolve().parents[1] / "samples" / "extra"
+_BOLD_LABEL = _EXTRA / "harbor_vodka.png"
+_TILTED_LABEL = _EXTRA / "tilted_vodka.png"
+
+
+@pytest.mark.skipif(
+    not weights_present() or not _BOLD_LABEL.is_file() or not _TILTED_LABEL.is_file(),
+    reason="PP-OCRv5 weights or the extra vodka labels are not available",
+)
+def test_the_bold_and_tilted_vodka_labels():
+    bold = verify_label(
+        _BOLD_LABEL.read_bytes(),
+        Application(
+            brand_name="HARBOR LIGHT",
+            class_type="Vodka",
+            alcohol_content="40%",
+            net_contents="750 mL",
+        ),
+    )
+    tilted = verify_label(
+        _TILTED_LABEL.read_bytes(),
+        Application(
+            brand_name="HARBOR LIGHT",
+            class_type="Vodka",
+            alcohol_content="40%",
+            net_contents="750 mL",
+        ),
+    )
+
+    assert bold.error is None
+    assert bold.verdict.overall is OverallStatus.PASS, (bold.verdict.summary, bold.transcript)
+    warning = next(item for item in bold.verdict.fields if item.name == "government_warning")
+    assert warning.emphasis == "match"
+    assert tilted.error is None
+    assert tilted.verdict.overall is OverallStatus.PASS, (tilted.verdict.summary, tilted.transcript)
+
+
 def test_model_dir_follows_the_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("LABELCHECK_MODEL_DIR", str(tmp_path))
 

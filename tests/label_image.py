@@ -13,7 +13,12 @@ _LINES = (
     "Kentucky Straight Bourbon Whiskey",
     "45% Alc./Vol. (90 Proof)",
     "750 mL",
-    "GOVERNMENT WARNING: (1) According to the",
+)
+# The prefix is its own line, and heavier than the body. Joined with spaces,
+# the warning lines are the statutory text.
+_WARNING = (
+    "GOVERNMENT WARNING:",
+    "(1) According to the",
     "Surgeon General, women should not drink",
     "alcoholic beverages during pregnancy",
     "because of the risk of birth defects.",
@@ -50,13 +55,25 @@ def _draw() -> Image.Image:
     draw = ImageDraw.Draw(image)
     draw.rectangle((0, 0, 1499, 1599), outline="black", width=16)
     bold = _font(_BOLD_CANDIDATES, 64)
-    body = _font(_BOLD_CANDIDATES, 48)
+    body = _font(_FONT_CANDIDATES, 48)
+    prefix = _font(_BOLD_CANDIDATES, 56)
     draw.rectangle((40, 40, 1460, 180), fill="black")
     draw.text((70, 58), "OLD TOM DISTILLERY", fill="white", font=bold)
     top = 220
     for line in _LINES:
         draw.text((70, top), line, fill="black", font=body)
-        top += 115
+        top += 100
+    top += 20
+    words = _WARNING[0].split()
+    cursor = 70
+    for word in words:
+        draw.text((cursor, top), word, fill="black", font=prefix)
+        draw.text((cursor + 1, top), word, fill="black", font=prefix)
+        cursor += int(prefix.getlength(word)) + 40
+    top += 100
+    for line in _WARNING[1:]:
+        draw.text((70, top), line, fill="black", font=body)
+        top += 100
     return image
 
 

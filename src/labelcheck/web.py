@@ -29,6 +29,11 @@ logger = logging.getLogger("labelcheck")
 
 CHOOSE_PHOTO = "Choose a label photo, then press Verify."
 BOLD_NOTE = "Bold type on “GOVERNMENT WARNING:” was not checked by this prototype."
+_EMPHASIS_NOTES = {
+    "match": "“GOVERNMENT WARNING:” is heavier than the rest of the warning.",
+    "mismatch": "“GOVERNMENT WARNING:” is not heavier than the rest of the warning.",
+    "inconclusive": "Bold type on “GOVERNMENT WARNING:” could not be judged. A person should check it.",
+}
 BATCH_UPLOAD_TOO_LARGE = "This upload is too large. A photo must be under 10 MB, and a zip under 200 MB."
 
 STATUS_TEXT = {
@@ -42,6 +47,17 @@ STATUS_TEXT = {
     "running": "Running",
     "error": "Error",
 }
+
+
+def bold_note_for(result: Verification | None) -> str:
+    """The blanket sentence stays only when the bold check did not run."""
+    warning = None
+    if result is not None and result.verdict is not None:
+        warning = next((item for item in result.verdict.fields if item.name == "government_warning"), None)
+    if warning is None or warning.emphasis not in _EMPHASIS_NOTES:
+        return BOLD_NOTE
+    return _EMPHASIS_NOTES[warning.emphasis]
+
 
 FIELDS = (
     {
@@ -183,7 +199,7 @@ def create_app(
                 "item": item,
                 "labels": FIELD_LABELS,
                 "status_text": STATUS_TEXT,
-                "bold_note": BOLD_NOTE,
+                "bold_note": bold_note_for(item.result),
                 "saved_note": f"Results from this batch are deleted after {BATCH_JOB_SECONDS // 60} minutes.",
             },
             headers=_NO_STORE,
@@ -215,7 +231,7 @@ def _render(request: Request, values: dict[str, str], result: Verification | Non
             "result": result,
             "labels": FIELD_LABELS,
             "status_text": STATUS_TEXT,
-            "bold_note": BOLD_NOTE,
+            "bold_note": bold_note_for(result),
         },
         headers=_NO_STORE,
     )

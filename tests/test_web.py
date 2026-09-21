@@ -128,6 +128,26 @@ def test_a_readable_label_shows_the_verdict_on_the_same_page():
     assert "Checked in" in response.text
 
 
+def test_a_bold_check_replaces_the_not_checked_note():
+    def reader(_image):
+        lines = bourbon_lines()
+        warning = lines[-1]
+        lines[-1] = OcrLine(
+            warning.text,
+            warning.confidence,
+            warning.height,
+            warning.top,
+            emphasis="match",
+        )
+        return lines
+
+    response = _post(TestClient(create_app(reader=reader)), _png(_sharp()))
+
+    assert "<h2>Pass</h2>" in response.text
+    assert "heavier than the rest of the warning" in response.text
+    assert "was not checked" not in response.text
+
+
 def test_label_text_is_escaped():
     def reader(_image):
         lines = list(bourbon_lines())

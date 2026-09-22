@@ -49,8 +49,7 @@ ZIP_UNREADABLE = "This zip could not be read."
 ZIP_NEEDS_CSV = "The zip needs one CSV of application rows."
 ZIP_ONE_CSV = "The zip should contain one CSV of application rows."
 FILE_TOO_LARGE = "A file in this zip is too large."
-CHOOSE_INPUT = "Choose a CSV and the label photos, or one zip that contains both."
-BOTH_INPUTS = "Choose a zip, or a CSV with photos, not both."
+CHOOSE_ZIP = "Choose a zip file that contains one CSV and the label photos."
 DUPLICATE_NAME = "Two photos use the same file name. Use one name per photo."
 
 
@@ -255,7 +254,6 @@ class BatchStore:
                     result = Verification(error=CHECK_FAILED)
                     self._mark(job, item, state=ERROR, summary=CHECK_FAILED, result=result)
         with job.lock:
-            job.images.clear()
             job.done = True
         logger.info("batch done items=%s", len(job.items))
 

@@ -1,23 +1,158 @@
 {% extends "layout.html" %}
 {% block main %}
-{% include "result.html" %}
-<form class="card" method="post" action="/verify" enctype="multipart/form-data">
-  <h2>Check a label</h2>
-  <p class="intro">Upload a label photo and the application fields. Press Verify. The result stays on this page.</p>
-  <label for="image">Label photo</label>
-  <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/tiff">
-  <p class="hint">JPEG, PNG, WEBP, or TIFF. The photo is used for this check only.</p>
-  {% for field in fields %}
-  <label for="{{ field.name }}">
-    {{ field.label }}
-    {% if field.required %}<span class="hint">(required)</span>{% elif field.hint %}<span class="hint">{{ field.hint }}</span>{% endif %}
-  </label>
-  {% if field.multiline %}
-  <textarea id="{{ field.name }}" name="{{ field.name }}" placeholder="{{ field.placeholder }}">{{ values[field.name] }}</textarea>
-  {% else %}
-  <input id="{{ field.name }}" name="{{ field.name }}" type="text" value="{{ values[field.name] }}" placeholder="{{ field.placeholder }}">
-  {% endif %}
-  {% endfor %}
-  <button type="submit">Verify</button>
-</form>
+<div class="workspace">
+  <form class="card form-panel" method="post" action="/verify" enctype="multipart/form-data">
+    <p class="intro">Upload the alcohol label and its application details to verify the label. Select an example at the bottom to see it in action.</p>
+    <section class="step" aria-labelledby="photo-heading">
+      <h2 id="photo-heading"><span class="step-num" aria-hidden="true">1</span> Label photo</h2>
+      <div id="photo-drop" class="drop">
+        <div class="drop-row">
+          <label class="choose" for="image">Choose photo</label>
+          <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/tiff">
+          <p id="photo-hint" class="hint">or drag the photo here.</p>
+        </div>
+        <div id="photo-preview" class="preview" hidden>
+          <img id="photo-thumb" alt="Selected label photo">
+          <button type="button" id="photo-clear" class="clear" aria-label="Remove photo">×</button>
+        </div>
+      </div>
+      <p class="hint">JPEG, PNG, WEBP, or TIFF. The photo is used for this check only.</p>
+    </section>
+
+    <section class="step" aria-labelledby="application-heading">
+      <h2 id="application-heading"><span class="step-num" aria-hidden="true">2</span> Application details</h2>
+      {% for field in fields if field.name in ("brand_name", "class_type") %}
+      {% include "field.html" %}
+      {% endfor %}
+      <div class="pair">
+        {% for field in fields if field.name in ("alcohol_content", "net_contents") %}
+        <div>{% include "field.html" %}</div>
+        {% endfor %}
+      </div>
+      <details class="more" {% if values.bottler or values.country_of_origin or values.government_warning %}open{% endif %}>
+        <summary>More fields (optional)</summary>
+        {% for name in ("bottler", "country_of_origin", "government_warning") %}
+        {% for field in fields if field.name == name %}
+        {% include "field.html" %}
+        {% endfor %}
+        {% endfor %}
+      </details>
+      <button type="submit">Verify label</button>
+    </section>
+
+    <section class="examples" aria-labelledby="examples-heading">
+      <h2 id="examples-heading">Try an example</h2>
+      <p class="hint">Fills in a sample label and its application details.</p>
+      <div class="example-list">
+        {% for example in examples %}
+        <button type="button" class="example" data-index="{{ loop.index0 }}">{{ example.label }}</button>
+        {% endfor %}
+      </div>
+    </section>
+  </form>
+
+  <div class="outcome">
+    {% include "result.html" %}
+    {% if not result %}
+    <section class="card outcome-empty">
+      <h2>Result</h2>
+      <p>Press Verify. The result stays on this page. Nothing is saved.</p>
+    </section>
+    {% endif %}
+  </div>
+</div>
+<script type="application/json" id="example-data">{{ examples|tojson }}</script>
+<script>
+  const examples = JSON.parse(document.getElementById("example-data").textContent);
+  const imageInput = document.getElementById("image");
+  const photoHint = document.getElementById("photo-hint");
+  const preview = document.getElementById("photo-preview");
+  const thumb = document.getElementById("photo-thumb");
+  const clearPhoto = document.getElementById("photo-clear");
+  const drop = document.getElementById("photo-drop");
+  const moreFields = document.querySelector("details.more");
+  let previewUrl = null;
+
+  function setHint(text) {
+    photoHint.textContent = text;
+  }
+
+  function clearPreview() {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      previewUrl = null;
+    }
+    thumb.removeAttribute("src");
+    preview.hidden = true;
+  }
+
+  function showPreview(file) {
+    clearPreview();
+    previewUrl = URL.createObjectURL(file);
+    thumb.src = previewUrl;
+    preview.hidden = false;
+    setHint(file.name);
+  }
+
+  function setPhotoFile(file) {
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    imageInput.files = transfer.files;
+    showPreview(file);
+  }
+
+  function resetPhoto() {
+    imageInput.value = "";
+    clearPreview();
+    setHint("or drag the photo here.");
+  }
+
+  imageInput.addEventListener("change", () => {
+    const file = imageInput.files && imageInput.files[0];
+    if (file) showPreview(file);
+    else resetPhoto();
+  });
+
+  clearPhoto.addEventListener("click", () => {
+    resetPhoto();
+  });
+
+  drop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    drop.classList.add("drag");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    drop.classList.remove("drag");
+    const file = event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) setPhotoFile(file);
+  });
+
+  document.querySelectorAll("button.example").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const example = examples[Number(button.dataset.index)];
+      for (const name of ["brand_name", "class_type", "alcohol_content", "net_contents", "government_warning", "bottler", "country_of_origin"]) {
+        const field = document.getElementById(name);
+        if (field) field.value = example[name] || "";
+      }
+      if (moreFields && (example.bottler || example.country_of_origin || example.government_warning)) {
+        moreFields.open = true;
+      }
+      document.querySelectorAll("button.example").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      setHint("Loading " + example.image + "…");
+      try {
+        const response = await fetch("/samples/" + encodeURIComponent(example.image));
+        if (!response.ok) throw new Error("missing");
+        const blob = await response.blob();
+        setPhotoFile(new File([blob], example.image, { type: blob.type || "image/png" }));
+      } catch (error) {
+        resetPhoto();
+        setHint("The application details are filled in. Choose " + example.image + " yourself.");
+      }
+    });
+  });
+</script>
 {% endblock %}

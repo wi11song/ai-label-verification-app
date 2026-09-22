@@ -64,13 +64,32 @@ def test_the_page_is_one_form_with_labeled_fields():
 
     assert response.status_code == 200
     assert "Alcohol Label Check" in response.text
-    assert "Check a label" in response.text
+    assert "Label photo" in response.text
+    assert "Application details" in response.text
+    assert "Try an example" in response.text
+    assert "Bourbon (should pass)" in response.text
     assert 'action="/verify"' in response.text
     for label in ("Brand name", "Class / type", "Alcohol content", "Net contents", "Government warning"):
         assert label in response.text
-    assert response.text.count(">Verify<") == 1
+    assert response.text.count(">Verify label<") == 1
+    assert "More fields (optional)" in response.text
+    assert "Choose photo" in response.text
     assert "<h2>Pass</h2>" not in response.text
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_an_example_photo_is_served_and_unknown_names_are_not():
+    client = TestClient(create_app())
+
+    photo = client.get("/samples/bourbon.png")
+    missing = client.get("/samples/not-a-label.png")
+    escape = client.get("/samples/../pyproject.toml")
+
+    assert photo.status_code == 200
+    assert photo.headers["content-type"].startswith("image/")
+    assert photo.content.startswith(b"\x89PNG")
+    assert missing.status_code == 404
+    assert escape.status_code == 404
 
 
 def test_a_missing_photo_asks_for_one_and_keeps_the_application():
@@ -102,6 +121,8 @@ def test_a_blurry_photo_is_needs_review_and_does_not_read():
     assert "<h2>Needs review</h2>" in response.text
     assert UNREADABLE_IMAGE_SUMMARY in response.text
     assert ">Unreadable<" in response.text
+    assert 'class="result-photo"' in response.text
+    assert 'src="data:image/png;base64,' in response.text
     assert "<h2>Fail</h2>" not in response.text
 
 
@@ -120,12 +141,16 @@ def test_a_readable_label_shows_the_verdict_on_the_same_page():
 
     assert "<h2>Pass</h2>" in response.text
     assert "All checked fields match." in response.text
+    assert 'class="result-photo"' in response.text
+    assert 'src="data:image/png;base64,' in response.text
+    assert 'alt="Label photo label.png"' in response.text
     assert ">Match<" in response.text
     assert "OLD TOM DISTILLERY" in response.text
     assert "What the reader saw on the label" in response.text
     assert "Bold type" in response.text
     assert "Nothing was saved." in response.text
     assert "Checked in" in response.text
+    assert "Check another label" in response.text
 
 
 def test_a_bold_check_replaces_the_not_checked_note():

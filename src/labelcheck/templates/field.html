@@ -1,0 +1,10 @@
+<label for="{{ field.name }}">
+  {{ field.label }}
+  {% if field.required %}<span class="hint">(required)</span>{% endif %}
+</label>
+{% if field.multiline %}
+<textarea id="{{ field.name }}" name="{{ field.name }}" placeholder="{{ field.placeholder }}">{{ values[field.name] }}</textarea>
+{% else %}
+<input id="{{ field.name }}" name="{{ field.name }}" type="text" value="{{ values[field.name] }}" placeholder="{{ field.placeholder }}">
+{% endif %}
+{% if field.hint %}<p class="hint">{{ field.hint }}</p>{% endif %}

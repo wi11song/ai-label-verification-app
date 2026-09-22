@@ -35,6 +35,8 @@ class Verification:
     error: str | None = None
     transcript: list[str] = field(default_factory=list)
     seconds: float = 0.0
+    image_name: str = ""
+    image_data: bytes = b""
 
 
 def verify_label(

@@ -1,6 +1,8 @@
 """One page: upload a label, enter the application, press Verify, read the result there."""
 
+import base64
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from pathlib import Path
@@ -8,21 +10,14 @@ from pathlib import Path
 from starlette.applications import Starlette
 from starlette.formparsers import MultiPartException
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import FileResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from labelcheck.batch import (
-    BOTH_INPUTS,
-    CHOOSE_INPUT,
-    DUPLICATE_NAME,
-    BatchError,
-    BatchStore,
-    read_zip,
-)
+from labelcheck.batch import CHOOSE_ZIP, BatchError, BatchStore, read_zip
 from labelcheck.models import FIELD_LABELS, Application
 from labelcheck.quality import IMAGE_TOO_LARGE
-from labelcheck.thresholds import BATCH_JOB_SECONDS, BATCH_MAX_ITEMS, BATCH_ZIP_BYTES, MAX_IMAGE_BYTES, SINGLE_LABEL_TIMEOUT
+from labelcheck.thresholds import BATCH_JOB_SECONDS, BATCH_ZIP_BYTES, MAX_IMAGE_BYTES, SINGLE_LABEL_TIMEOUT
 from labelcheck.verify import CHECK_FAILED, CHECK_TIMEOUT, Verification, verify_label
 
 logger = logging.getLogger("labelcheck")
@@ -98,25 +93,119 @@ FIELDS = (
         "required": False,
         "multiline": True,
         "placeholder": "",
-        "hint": "Leave blank to use the standard warning.",
+        "hint": "Leave blank to check against the standard legal wording.",
     },
     {
         "name": "bottler",
-        "label": "Bottler / producer",
+        "label": "Bottler / producer name and address",
         "required": False,
         "multiline": True,
         "placeholder": "",
-        "hint": "Optional.",
+        "hint": "",
     },
     {
         "name": "country_of_origin",
-        "label": "Country of origin",
+        "label": "Country of origin (imports)",
         "required": False,
         "multiline": False,
         "placeholder": "",
-        "hint": "Optional. Use this for imports.",
+        "hint": "",
     },
 )
+
+# Known sample photos. Choosing one fills the application and attaches that photo.
+EXAMPLES = (
+    {
+        "label": "Bourbon (should pass)",
+        "image": "bourbon.png",
+        "brand_name": "OLD TOM DISTILLERY",
+        "class_type": "Kentucky Straight Bourbon Whiskey",
+        "alcohol_content": "45%",
+        "net_contents": "750 mL",
+        "government_warning": "",
+        "bottler": "Bottled by Old Tom Distillery, Bardstown, KY",
+        "country_of_origin": "",
+    },
+    {
+        "label": "STONE'S THROW vs Stone's Throw",
+        "image": "stones_throw.png",
+        "brand_name": "Stone's Throw",
+        "class_type": "Straight Rye Whisky",
+        "alcohol_content": "50% Alc./Vol. (100 Proof)",
+        "net_contents": "750 mL",
+        "government_warning": "",
+        "bottler": "Bottled by Stone's Throw Spirits, Frankfort, KY",
+        "country_of_origin": "",
+    },
+    {
+        "label": "Missing apostrophe",
+        "image": "stones_throw_no_apostrophe.png",
+        "brand_name": "Stone's Throw",
+        "class_type": "Straight Rye Whisky",
+        "alcohol_content": "50% Alc./Vol. (100 Proof)",
+        "net_contents": "750 mL",
+        "government_warning": "",
+        "bottler": "Bottled by Stone's Throw Spirits, Frankfort, KY",
+        "country_of_origin": "",
+    },
+    {
+        "label": "Title-case warning",
+        "image": "title_case_warning.png",
+        "brand_name": "OLD TOM DISTILLERY",
+        "class_type": "Kentucky Straight Bourbon Whiskey",
+        "alcohol_content": "45% Alc./Vol. (90 Proof)",
+        "net_contents": "750 mL",
+        "government_warning": "",
+        "bottler": "Bottled by Old Tom Distillery, Bardstown, KY",
+        "country_of_origin": "",
+    },
+    {
+        "label": "Wrong alcohol %",
+        "image": "wrong_abv.png",
+        "brand_name": "OLD TOM DISTILLERY",
+        "class_type": "Kentucky Straight Bourbon Whiskey",
+        "alcohol_content": "45%",
+        "net_contents": "750 mL",
+        "government_warning": "",
+        "bottler": "Bottled by Old Tom Distillery, Bardstown, KY",
+        "country_of_origin": "",
+    },
+    {
+        "label": "Blurry photo",
+        "image": "blurry.png",
+        "brand_name": "OLD TOM DISTILLERY",
+        "class_type": "Kentucky Straight Bourbon Whiskey",
+        "alcohol_content": "45% Alc./Vol. (90 Proof)",
+        "net_contents": "750 mL",
+        "government_warning": "",
+        "bottler": "Bottled by Old Tom Distillery, Bardstown, KY",
+        "country_of_origin": "",
+    },
+    {
+        "label": "Imported gin (1 L vs 1000 mL)",
+        "image": "imported_gin.png",
+        "brand_name": "HARBOUR LIGHT",
+        "class_type": "London Dry Gin",
+        "alcohol_content": "47% Alc./Vol.",
+        "net_contents": "1 L",
+        "government_warning": "",
+        "bottler": "Imported by Harbour Light Imports, Seattle, WA",
+        "country_of_origin": "Product of England",
+    },
+)
+_EXAMPLE_IMAGES = {item["image"] for item in EXAMPLES}
+
+BATCH_SAMPLE_ZIP = "zip_batch.zip"
+
+# Known batch zip. Choosing it fills the zip field and starts the check.
+BATCH_EXAMPLES = (
+    {
+        "label": "Extra spirits zip (12 labels)",
+        "zip": BATCH_SAMPLE_ZIP,
+        "hint": "Loads the sample zip and starts the batch.",
+    },
+)
+_SAMPLE_FILES = _EXAMPLE_IMAGES | {item["zip"] for item in BATCH_EXAMPLES} | {BATCH_SAMPLE_ZIP}
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 _NO_STORE = {"Cache-Control": "no-store"}
@@ -134,6 +223,20 @@ def create_app(
     async def home(request: Request) -> Response:
         return _render(request, _blank_form(), None)
 
+    async def sample_photo(request: Request) -> Response:
+        name = request.path_params["name"]
+        path = _sample_path(name)
+        if path is None:
+            return Response("That example photo is not available.", status_code=404, headers=_NO_STORE)
+        if path.suffix.lower() == ".zip":
+            return FileResponse(
+                path,
+                filename=name,
+                media_type="application/zip",
+                headers=_NO_STORE,
+            )
+        return FileResponse(path, headers=_NO_STORE)
+
     async def check(request: Request) -> Response:
         try:
             form = await request.form(max_files=1, max_fields=20, max_part_size=MAX_IMAGE_BYTES)
@@ -148,6 +251,8 @@ def create_app(
         finally:
             await upload.close()
         result = _run_check(data, _application(values), reader=reader, timeout=timeout, executor=executor)
+        result.image_name = Path(upload.filename).name
+        result.image_data = data
         return _render(request, values, result)
 
     async def batch_form(request: Request) -> Response:
@@ -155,11 +260,7 @@ def create_app(
 
     async def batch_start(request: Request) -> Response:
         try:
-            form = await request.form(
-                max_files=BATCH_MAX_ITEMS + 2,
-                max_fields=20,
-                max_part_size=BATCH_ZIP_BYTES,
-            )
+            form = await request.form(max_files=1, max_fields=5, max_part_size=BATCH_ZIP_BYTES)
         except MultiPartException:
             return _render_batch(request, error=BATCH_UPLOAD_TOO_LARGE, job=None)
         try:
@@ -190,6 +291,7 @@ def create_app(
             return _render_batch(request, error=None, job=None, missing=True)
         with job.lock:
             item = job.items[index]
+            has_photo = bool(item.image_name and item.image_name in job.images)
         return _TEMPLATES.TemplateResponse(
             request,
             "batch_item.html",
@@ -197,6 +299,7 @@ def create_app(
                 "page": "batch",
                 "job": job,
                 "item": item,
+                "has_photo": has_photo,
                 "labels": FIELD_LABELS,
                 "status_text": STATUS_TEXT,
                 "bold_note": bold_note_for(item.result),
@@ -205,15 +308,29 @@ def create_app(
             headers=_NO_STORE,
         )
 
+    async def batch_item_image(request: Request) -> Response:
+        job = store.get(request.path_params["job_id"])
+        index = request.path_params["index"]
+        if job is None or not isinstance(index, int) or index < 0 or index >= len(job.items):
+            return Response("That photo is no longer available.", status_code=404, headers=_NO_STORE)
+        with job.lock:
+            item = job.items[index]
+            data = job.images.get(item.image_name)
+        if not data:
+            return Response("That photo is no longer available.", status_code=404, headers=_NO_STORE)
+        return Response(data, media_type=_image_type(item.image_name), headers=_NO_STORE)
+
     app = Starlette(
         routes=[
             Route("/", home, methods=["GET"]),
             Route("/verify", check, methods=["POST"]),
+            Route("/samples/{name}", sample_photo, methods=["GET"]),
             Route("/batch", batch_form, methods=["GET"]),
             Route("/batch", batch_start, methods=["POST"]),
             Route("/batch/{job_id}", batch_progress, methods=["GET"]),
             Route("/batch/{job_id}/status", batch_status, methods=["GET"]),
             Route("/batch/{job_id}/items/{index:int}", batch_item, methods=["GET"]),
+            Route("/batch/{job_id}/items/{index:int}/image", batch_item_image, methods=["GET"]),
         ]
     )
     app.state.batches = store
@@ -229,12 +346,33 @@ def _render(request: Request, values: dict[str, str], result: Verification | Non
             "fields": FIELDS,
             "values": values,
             "result": result,
+            "label_image_src": _label_image_src(result),
             "labels": FIELD_LABELS,
             "status_text": STATUS_TEXT,
             "bold_note": bold_note_for(result),
+            "examples": EXAMPLES,
         },
         headers=_NO_STORE,
     )
+
+
+def _label_image_src(result: Verification | None) -> str | None:
+    if result is None or not result.image_data:
+        return None
+    mime = _image_type(result.image_name or "label.png")
+    encoded = base64.b64encode(result.image_data).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _sample_path(name: str) -> Path | None:
+    if name not in _SAMPLE_FILES or Path(name).name != name:
+        return None
+    override = os.environ.get("LABELCHECK_SAMPLE_DIR")
+    directory = Path(override) if override else Path(__file__).resolve().parents[2] / "samples"
+    path = directory / name
+    if not path.is_file():
+        return None
+    return path
 
 
 def _render_batch(request: Request, *, error: str | None, job, missing: bool = False) -> Response:
@@ -251,6 +389,8 @@ def _render_batch(request: Request, *, error: str | None, job, missing: bool = F
             "missing": missing,
             "status_text": STATUS_TEXT,
             "keep_minutes": BATCH_JOB_SECONDS // 60,
+            "batch_examples": BATCH_EXAMPLES,
+            "sample_zip": BATCH_SAMPLE_ZIP,
         },
         status_code=status,
         headers=_NO_STORE,
@@ -258,41 +398,31 @@ def _render_batch(request: Request, *, error: str | None, job, missing: bool = F
 
 
 async def _batch_inputs(form) -> tuple[bytes, dict[str, bytes]]:
-    csv_upload = _named_upload(form.get("csv"))
     zip_upload = _named_upload(form.get("zip"))
-    photos = [_named_upload(item) for item in form.getlist("images")]
-    photos = [item for item in photos if item is not None]
-    if zip_upload is not None and (csv_upload is not None or photos):
-        raise BatchError(BOTH_INPUTS)
-    if zip_upload is not None:
-        try:
-            data = await zip_upload.read()
-        finally:
-            await zip_upload.close()
-        return read_zip(data)
-    if csv_upload is None:
-        raise BatchError(CHOOSE_INPUT)
+    if zip_upload is None:
+        raise BatchError(CHOOSE_ZIP)
     try:
-        csv_bytes = await csv_upload.read()
+        data = await zip_upload.read()
     finally:
-        await csv_upload.close()
-    images: dict[str, bytes] = {}
-    for upload in photos:
-        name = Path(upload.filename).name
-        if name in images:
-            raise BatchError(DUPLICATE_NAME)
-        try:
-            data = await upload.read()
-        finally:
-            await upload.close()
-        images[name] = data
-    return csv_bytes, images
+        await zip_upload.close()
+    return read_zip(data)
 
 
 def _named_upload(upload):
     if upload is None or not getattr(upload, "filename", None):
         return None
     return upload
+
+
+def _image_type(name: str) -> str:
+    suffix = Path(name).suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".webp":
+        return "image/webp"
+    if suffix in {".tif", ".tiff"}:
+        return "image/tiff"
+    return "image/png"
 
 
 def _run_check(data: bytes, application: Application, *, reader, timeout: float, executor) -> Verification:

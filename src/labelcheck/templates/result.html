@@ -10,6 +10,11 @@
     <h2>{{ status_text[result.verdict.overall.value] }}</h2>
     <p>{{ result.verdict.summary }}</p>
   </div>
+  {% if label_image_src %}
+  <div class="result-photo">
+    <img class="label-photo" src="{{ label_image_src }}" alt="Label photo{% if result.image_name %} {{ result.image_name }}{% endif %}">
+  </div>
+  {% endif %}
   <div class="table-wrap">
     <table class="fields">
       <thead>
@@ -48,5 +53,6 @@
     {% endif %}
   </details>
   <p class="saved">Checked in {{ "%.1f"|format(result.seconds) }} seconds. {{ saved_note|default("Nothing was saved.") }}</p>
+  <p><a class="action inline" href="/">Check another label</a></p>
 </section>
 {% endif %}

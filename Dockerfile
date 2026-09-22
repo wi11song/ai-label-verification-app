@@ -8,10 +8,12 @@ RUN apt-get update \
 WORKDIR /srv
 COPY pyproject.toml .
 COPY src ./src
+COPY samples ./samples
 RUN pip install --no-cache-dir .
 
 # The build may download the pinned PP-OCRv5 weights. A running container does not.
 ENV LABELCHECK_MODEL_DIR=/opt/models \
+    LABELCHECK_SAMPLE_DIR=/srv/samples \
     ORT_DISABLE_TELEMETRY=1 \
     PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=2

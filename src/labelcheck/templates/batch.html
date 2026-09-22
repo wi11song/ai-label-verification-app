@@ -94,19 +94,106 @@
   }
 </script>
 {% else %}
-<form class="card" method="post" action="/batch" enctype="multipart/form-data">
+<form id="batch-form" class="card" method="post" action="/batch" enctype="multipart/form-data">
   <h2>Check many labels</h2>
-  <p class="intro">Upload a CSV of application rows and the label photos. Or upload one zip that contains both. One photo that cannot be read does not stop the rest.</p>
-  <label for="csv">Application CSV</label>
-  <input id="csv" name="csv" type="file" accept=".csv,text/csv">
-  <p class="hint">Columns: image, brand_name, class_type, alcohol_content, net_contents, government_warning, bottler, country_of_origin. A blank warning uses the standard warning. Up to 300 rows.</p>
-  <label for="images">Label photos</label>
-  <input id="images" name="images" type="file" accept="image/jpeg,image/png,image/webp,image/tiff" multiple>
-  <p class="hint">The file name must match the image column. JPEG, PNG, WEBP, or TIFF. Under 10 MB each.</p>
-  <label for="zip">Or a zip of the CSV and photos</label>
-  <input id="zip" name="zip" type="file" accept=".zip,application/zip">
+  <p class="intro">Upload one zip that contains a CSV of application rows and the label photos. One photo that cannot be read does not stop the rest.</p>
+
+  <section class="batch-format" aria-labelledby="format-heading">
+    <h3 id="format-heading">What goes in the zip</h3>
+    <ul>
+      <li>One CSV with columns <strong>image</strong>, <strong>brand_name</strong>, <strong>class_type</strong>, <strong>alcohol_content</strong>, and <strong>net_contents</strong>. Optional: <strong>government_warning</strong>, <strong>bottler</strong>, <strong>country_of_origin</strong>. A blank warning uses the standard warning.</li>
+      <li>Label photos named in the <strong>image</strong> column. JPEG, PNG, WEBP, or TIFF. Under 10 MB each.</li>
+      <li>Photos and the CSV can sit in the same folder inside the zip. Up to 300 rows.</li>
+    </ul>
+    <p>
+      <a class="action inline" href="/samples/{{ sample_zip }}" download="{{ sample_zip }}">Download example zip</a>
+      to see the layout, then upload your own zip below.
+    </p>
+  </section>
+
+  <label for="zip">Label zip</label>
+  <div id="zip-drop" class="drop">
+    <div class="drop-row">
+      <label class="choose" for="zip">Choose zip</label>
+      <input id="zip" name="zip" type="file" accept=".zip,application/zip">
+      <p id="zip-hint" class="hint">or drag the zip here.</p>
+    </div>
+  </div>
+  <p id="zip-status" class="hint" hidden></p>
+  <p class="hint">Under 200 MB. The zip must contain one CSV and the photos it lists.</p>
   <button type="submit">Start batch</button>
+
+  <section class="examples" aria-labelledby="batch-examples-heading">
+    <h2 id="batch-examples-heading">Try an example</h2>
+    <p class="hint">Loads the sample zip and starts the batch.</p>
+    <div class="example-list">
+      {% for example in batch_examples %}
+      <button type="button" class="example" data-zip="{{ example.zip }}">{{ example.label }}</button>
+      {% endfor %}
+    </div>
+  </section>
 </form>
 <p class="saved">Results stay for {{ keep_minutes }} minutes, then they are deleted. Nothing else is saved.</p>
+<script type="application/json" id="batch-example-data">{{ batch_examples|tojson }}</script>
+<script>
+  const batchExamples = JSON.parse(document.getElementById("batch-example-data").textContent);
+  const form = document.getElementById("batch-form");
+  const zipInput = document.getElementById("zip");
+  const zipHint = document.getElementById("zip-hint");
+  const zipStatus = document.getElementById("zip-status");
+  const drop = document.getElementById("zip-drop");
+
+  function setZipFile(file) {
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    zipInput.files = transfer.files;
+    zipStatus.hidden = false;
+    zipStatus.textContent = file.name + " is ready.";
+    zipHint.textContent = file.name;
+  }
+
+  zipInput.addEventListener("change", () => {
+    const file = zipInput.files && zipInput.files[0];
+    if (file) setZipFile(file);
+    else {
+      zipStatus.hidden = true;
+      zipHint.textContent = "or drag the zip here.";
+    }
+  });
+
+  drop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    drop.classList.add("drag");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    drop.classList.remove("drag");
+    const file = event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) setZipFile(file);
+  });
+
+  document.querySelectorAll("button.example").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const name = button.dataset.zip;
+      document.querySelectorAll("button.example").forEach((item) => {
+        item.setAttribute("aria-pressed", item === button ? "true" : "false");
+      });
+      button.disabled = true;
+      zipStatus.hidden = false;
+      zipStatus.textContent = "Loading " + name + "…";
+      try {
+        const response = await fetch("/samples/" + encodeURIComponent(name));
+        if (!response.ok) throw new Error("missing");
+        const blob = await response.blob();
+        setZipFile(new File([blob], name, { type: blob.type || "application/zip" }));
+        form.submit();
+      } catch (error) {
+        zipStatus.textContent = "Could not load " + name + ". Download the example zip or choose your own, then press Start batch.";
+        button.disabled = false;
+      }
+    });
+  });
+</script>
 {% endif %}
 {% endblock %}

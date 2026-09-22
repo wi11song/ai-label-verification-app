@@ -16,7 +16,7 @@ def test_bourbon_sample_passes():
     verdict = compare_label(bourbon_application(), bourbon_extracted())
 
     assert verdict.overall is OverallStatus.PASS
-    assert verdict.summary == "All checked fields match."
+    assert verdict.summary == "5 of 5 required fields match."
     assert {item.status for item in verdict.fields} == {FieldStatus.MATCH}
     warning = _item(verdict, "government_warning")
     assert warning.emphasis == "not_checked"

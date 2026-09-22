@@ -2,6 +2,7 @@
 
 from labelcheck.models import (
     FIELD_LABELS,
+    REQUIRED_FIELDS,
     FieldResult,
     FieldStatus,
     LabelVerdict,
@@ -30,7 +31,7 @@ def decide(
         return LabelVerdict(OverallStatus.FAIL, _fail_summary(fields), fields)
     if any(item.status in {FieldStatus.UNREADABLE, FieldStatus.NEEDS_REVIEW} for item in fields):
         return LabelVerdict(OverallStatus.NEEDS_REVIEW, _review_summary(fields), fields)
-    return LabelVerdict(OverallStatus.PASS, "All checked fields match.", fields)
+    return LabelVerdict(OverallStatus.PASS, _pass_summary(fields), fields)
 
 
 def _unreadable_field(item: FieldResult) -> FieldResult:
@@ -43,6 +44,13 @@ def _unreadable_field(item: FieldResult) -> FieldResult:
         reason=UNREADABLE_IMAGE_FIELD_REASON,
         emphasis=item.emphasis,
     )
+
+
+def _pass_summary(fields: list[FieldResult]) -> str:
+    required = [item for item in fields if item.name in REQUIRED_FIELDS]
+    matched = sum(1 for item in required if item.status is FieldStatus.MATCH)
+    total = len(required)
+    return f"{matched} of {total} required fields match."
 
 
 def _fail_summary(fields: list[FieldResult]) -> str:

@@ -75,6 +75,7 @@ def test_the_page_is_one_form_with_labeled_fields():
     assert "More fields (optional)" in response.text
     assert "Choose photo" in response.text
     assert "<h2>Pass</h2>" not in response.text
+    assert "<h2>Label matches</h2>" not in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
@@ -109,6 +110,7 @@ def test_a_bad_file_is_an_error_and_does_not_read():
 
     assert UNSUPPORTED_IMAGE in response.text
     assert "<h2>Fail</h2>" not in response.text
+    assert "<h2>Label does not match</h2>" not in response.text
 
 
 def test_a_blurry_photo_is_needs_review_and_does_not_read():
@@ -124,6 +126,7 @@ def test_a_blurry_photo_is_needs_review_and_does_not_read():
     assert 'class="result-photo"' in response.text
     assert 'src="data:image/png;base64,' in response.text
     assert "<h2>Fail</h2>" not in response.text
+    assert "<h2>Label does not match</h2>" not in response.text
 
 
 def test_missing_application_fields_are_explained():
@@ -139,8 +142,16 @@ def test_a_readable_label_shows_the_verdict_on_the_same_page():
     client = TestClient(create_app(reader=lambda _image: bourbon_lines()))
     response = _post(client, _png(_sharp()))
 
-    assert "<h2>Pass</h2>" in response.text
-    assert "All checked fields match." in response.text
+    assert "<h2>Label matches</h2>" in response.text
+    assert "5 of 5 required fields match." in response.text
+    assert "Required fields" in response.text
+    assert "Optional fields" in response.text
+    assert "Not provided" in response.text
+    assert "Optional field — not included in this check." in response.text
+    assert "<th>Why</th>" not in response.text
+    assert "<summary>Why</summary>" in response.text
+    assert "View full size" in response.text
+    assert 'id="label-lightbox"' in response.text
     assert 'class="result-photo"' in response.text
     assert 'src="data:image/png;base64,' in response.text
     assert 'alt="Label photo label.png"' in response.text
@@ -168,7 +179,7 @@ def test_a_bold_check_replaces_the_not_checked_note():
 
     response = _post(TestClient(create_app(reader=reader)), _png(_sharp()))
 
-    assert "<h2>Pass</h2>" in response.text
+    assert "<h2>Label matches</h2>" in response.text
     assert "heavier than the rest of the warning" in response.text
     assert "was not checked" not in response.text
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test a running instance: wait for the page, verify the bourbon sample, expect Pass.
+# Smoke test a running instance: wait for the page, verify the bourbon sample, expect Label matches.
 # Usage: scripts/smoke_test.sh http://localhost:8000
 set -euo pipefail
 
@@ -32,6 +32,6 @@ html="$(sed '$d' <<<"$body")"
 overall="$(python3 -c 'import sys; html=sys.stdin.read(); start=html.find("<h2>"); end=html.find("</h2>", start); print(html[start + 4:end].strip() if start != -1 else "")' <<<"$html")"
 
 echo "overall=${overall} time=${elapsed}s"
-[[ "$overall" == "Pass" ]] || { echo "Expected Pass"; echo "$html"; exit 1; }
+[[ "$overall" == "Label matches" ]] || { echo "Expected Label matches"; echo "$html"; exit 1; }
 python3 -c "import sys; sys.exit(0 if float('$elapsed') <= float('$MAX_S') else 1)" \
   || { echo "Too slow: ${elapsed}s > ${MAX_S}s"; exit 1; }

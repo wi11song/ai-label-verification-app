@@ -50,7 +50,7 @@ def test_a_readable_photo_is_parsed_and_compared():
 
     assert result.error is None
     assert result.verdict.overall is OverallStatus.PASS
-    assert result.verdict.summary == "All checked fields match."
+    assert result.verdict.summary == "5 of 5 required fields match."
     assert result.transcript[0] == "Kentucky Straight Bourbon Whiskey"
     assert result.seconds >= 0
 

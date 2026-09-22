@@ -15,7 +15,13 @@ from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
 from labelcheck.batch import CHOOSE_ZIP, BatchError, BatchStore, read_zip
-from labelcheck.models import FIELD_LABELS, Application
+from labelcheck.models import (
+    FIELD_LABELS,
+    OPTIONAL_FIELDS,
+    REQUIRED_FIELDS,
+    Application,
+    LabelVerdict,
+)
 from labelcheck.quality import IMAGE_TOO_LARGE
 from labelcheck.thresholds import BATCH_JOB_SECONDS, BATCH_ZIP_BYTES, MAX_IMAGE_BYTES, SINGLE_LABEL_TIMEOUT
 from labelcheck.verify import CHECK_FAILED, CHECK_TIMEOUT, Verification, verify_label
@@ -43,6 +49,12 @@ STATUS_TEXT = {
     "error": "Error",
 }
 
+VERDICT_HEADING = {
+    "pass": "Label matches",
+    "fail": "Label does not match",
+    "needs_review": "Needs review",
+}
+
 
 def bold_note_for(result: Verification | None) -> str:
     """The blanket sentence stays only when the bold check did not run."""
@@ -52,6 +64,21 @@ def bold_note_for(result: Verification | None) -> str:
     if warning is None or warning.emphasis not in _EMPHASIS_NOTES:
         return BOLD_NOTE
     return _EMPHASIS_NOTES[warning.emphasis]
+
+
+def field_sections(verdict: LabelVerdict | None) -> dict[str, list[dict]]:
+    """Split verdict fields into required and optional display rows."""
+    if verdict is None:
+        return {"required": [], "optional": []}
+    by_name = {item.name: item for item in verdict.fields}
+    required = [{"item": by_name[name], "not_provided": False} for name in REQUIRED_FIELDS if name in by_name]
+    optional: list[dict] = []
+    for name in OPTIONAL_FIELDS:
+        if name in by_name:
+            optional.append({"item": by_name[name], "not_provided": False})
+        else:
+            optional.append({"name": name, "not_provided": True})
+    return {"required": required, "optional": optional}
 
 
 FIELDS = (
@@ -302,6 +329,8 @@ def create_app(
                 "has_photo": has_photo,
                 "labels": FIELD_LABELS,
                 "status_text": STATUS_TEXT,
+                "verdict_heading": VERDICT_HEADING,
+                "field_sections": field_sections(item.result.verdict if item.result else None),
                 "bold_note": bold_note_for(item.result),
                 "saved_note": f"Results from this batch are deleted after {BATCH_JOB_SECONDS // 60} minutes.",
             },
@@ -349,6 +378,8 @@ def _render(request: Request, values: dict[str, str], result: Verification | Non
             "label_image_src": _label_image_src(result),
             "labels": FIELD_LABELS,
             "status_text": STATUS_TEXT,
+            "verdict_heading": VERDICT_HEADING,
+            "field_sections": field_sections(result.verdict if result else None),
             "bold_note": bold_note_for(result),
             "examples": EXAMPLES,
         },

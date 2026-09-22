@@ -123,8 +123,9 @@ def test_one_bad_row_does_not_stop_the_rest():
     assert ">Fail<" in page.text
     assert ">Error<" in page.text
     detail = TestClient(app).get(f"/batch/{job_id}/items/1")
-    assert "<h2>Fail</h2>" in detail.text
+    assert "<h2>Label does not match</h2>" in detail.text
     assert "Application says" in detail.text
+    assert "Required fields" in detail.text
     assert "NOT A BRAND" in detail.text
     assert f'/batch/{job_id}/items/1/image' in detail.text
     assert 'alt="Label photo other.png"' in detail.text

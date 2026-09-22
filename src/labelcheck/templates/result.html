@@ -7,38 +7,84 @@
 {% elif result and result.verdict %}
 <section id="result" class="card">
   <div class="banner {{ result.verdict.overall.value }}">
-    <h2>{{ status_text[result.verdict.overall.value] }}</h2>
+    <h2>{{ verdict_heading[result.verdict.overall.value] }}</h2>
     <p>{{ result.verdict.summary }}</p>
   </div>
   {% if label_image_src %}
   <div class="result-photo">
-    <img class="label-photo" src="{{ label_image_src }}" alt="Label photo{% if result.image_name %} {{ result.image_name }}{% endif %}">
+    <button type="button" class="photo-trigger" data-photo-open aria-haspopup="dialog" aria-controls="label-lightbox">
+      <img class="label-photo" src="{{ label_image_src }}" alt="Label photo{% if result.image_name %} {{ result.image_name }}{% endif %}">
+    </button>
+    <button type="button" class="photo-enlarge" data-photo-open aria-haspopup="dialog" aria-controls="label-lightbox">View full size</button>
   </div>
+  <dialog id="label-lightbox" class="lightbox">
+    <form method="dialog">
+      <button type="submit" class="lightbox-close" aria-label="Close full-size photo">Close</button>
+    </form>
+    <img src="{{ label_image_src }}" alt="Full-size label photo{% if result.image_name %} {{ result.image_name }}{% endif %}">
+  </dialog>
   {% endif %}
-  <div class="table-wrap">
-    <table class="fields">
-      <thead>
-        <tr>
-          <th>Field</th>
-          <th>Application says</th>
-          <th>Label says</th>
-          <th>Result</th>
-          <th>Why</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in result.verdict.fields %}
-        <tr class="field-{{ item.status.value }}">
-          <th scope="row">{{ labels[item.name] }}</th>
-          <td>{{ item.application }}</td>
-          <td>{{ item.extracted }}</td>
-          <td><span class="pill {{ item.status.value }}">{{ status_text[item.status.value] }}</span></td>
-          <td>{{ item.reason }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% macro field_table(rows, heading) %}
+  <section class="field-section">
+    <h3>{{ heading }}</h3>
+    <div class="table-wrap">
+      <table class="fields">
+        <colgroup>
+          <col class="col-field">
+          <col class="col-application">
+          <col class="col-label">
+          <col class="col-result">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Application says</th>
+            <th>Label says</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          {% if row.not_provided %}
+          <tr class="field-not-provided">
+            <th scope="row">{{ labels[row.name] }}</th>
+            <td>—</td>
+            <td>—</td>
+            <td><span class="pill not_provided">Not provided</span></td>
+          </tr>
+          <tr class="field-why">
+            <td colspan="4">
+              <details>
+                <summary>Why</summary>
+                <p>Optional field — not included in this check.</p>
+              </details>
+            </td>
+          </tr>
+          {% else %}
+          {% set item = row.item %}
+          <tr class="field-{{ item.status.value }}">
+            <th scope="row">{{ labels[item.name] }}</th>
+            <td>{{ item.application }}</td>
+            <td>{{ item.extracted }}</td>
+            <td><span class="pill {{ item.status.value }}">{{ status_text[item.status.value] }}</span></td>
+          </tr>
+          <tr class="field-why">
+            <td colspan="4">
+              <details {% if item.status.value != "match" %}open{% endif %}>
+                <summary>Why</summary>
+                <p>{{ item.reason }}</p>
+              </details>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endmacro %}
+  {{ field_table(field_sections.required, "Required fields") }}
+  {{ field_table(field_sections.optional, "Optional fields") }}
   <p class="note">{{ bold_note }}</p>
   <details>
     <summary>What the reader saw on the label ({{ result.transcript|length }} lines)</summary>
@@ -55,4 +101,15 @@
   <p class="saved">Checked in {{ "%.1f"|format(result.seconds) }} seconds. {{ saved_note|default("Nothing was saved.") }}</p>
   <p><a class="action inline" href="/">Check another label</a></p>
 </section>
+{% if label_image_src %}
+<script>
+  (function () {
+    const dialog = document.getElementById("label-lightbox");
+    if (!dialog) return;
+    document.querySelectorAll("[data-photo-open]").forEach((button) => {
+      button.addEventListener("click", () => dialog.showModal());
+    });
+  })();
+</script>
+{% endif %}
 {% endif %}

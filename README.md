@@ -38,7 +38,7 @@ Open **Check one label**. Upload a photo and enter the brand, class/type, alcoho
 
 ### Check a batch
 
-Open **Check many labels**. Upload `samples/demo_batch.csv` and the photos in `samples/`, or one zip that contains the CSV and the photos. The image column must match each file name. Up to 300 rows. At most two labels are read at a time. One bad file does not stop the rest.
+Open **Check many labels**. Upload one zip that contains the CSV and the photos. The image column must match each file name. Up to 300 rows. At most two labels are read at a time. One bad file does not stop the rest.
 
 CSV columns: `image`, `brand_name`, `class_type`, `alcohol_content`, `net_contents`, `government_warning`, `bottler`, `country_of_origin`. A blank warning cell means the statutory text.
 

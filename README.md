@@ -16,7 +16,7 @@ Docker is the setup that matches the image used in CI. The first start downloads
 docker compose up --build
 ```
 
-Open http://localhost:8000. The process listens on `PORT` (default 8000). Run one copy. Batch jobs live in that process, so a second replica would not see them.
+Open [http://localhost:8000](http://localhost:8000). The process listens on `PORT` (default 8000). Run one copy. Batch jobs live in that process, so a second replica would not see them.
 
 To run from a virtual environment instead:
 
@@ -64,16 +64,18 @@ photo → quality gate → OCR lines → field parser → comparison → Pass / 
 
 If the gate says the photo cannot be read, OCR does not run.
 
-| Module | Role |
-|---|---|
-| `quality.py` | Rejects a bad file. Flags a photo that is too small, blurry, blank, or washed out. |
-| `ocr.py` | The only module that imports the OCR runtime. Loads the pinned PP-OCRv5 mobile weights from disk. |
-| `parse.py` | Assigns lines to fields. A line already used is not reused as the brand. |
-| `normalize.py`, `compare.py` | Comparison rules for each field. |
-| `decide.py` | Turns the field results into Pass, Fail, or Needs review. |
-| `verify.py` | One label: gate, then OCR, then comparison. |
-| `batch.py` | In-memory jobs, two at a time, zip path checks, 60-minute expiry. |
-| `web.py` | The pages. |
+
+| Module                       | Role                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| `quality.py`                 | Rejects a bad file. Flags a photo that is too small, blurry, blank, or washed out.                |
+| `ocr.py`                     | The only module that imports the OCR runtime. Loads the pinned PP-OCRv5 mobile weights from disk. |
+| `parse.py`                   | Assigns lines to fields. A line already used is not reused as the brand.                          |
+| `normalize.py`, `compare.py` | Comparison rules for each field.                                                                  |
+| `decide.py`                  | Turns the field results into Pass, Fail, or Needs review.                                         |
+| `verify.py`                  | One label: gate, then OCR, then comparison.                                                       |
+| `batch.py`                   | In-memory jobs, two at a time, zip path checks, 60-minute expiry.                                 |
+| `web.py`                     | The pages.                                                                                        |
+
 
 A confident mismatch is Fail. An unreadable or uncertain field is Needs review. Otherwise the label passes. A low-confidence read is never treated as a match.
 
@@ -101,11 +103,15 @@ The detector returns words, not whole lines, so words on the same row are joined
 - Bold type on the warning is not checked.
 - There is no login. The limits are file size (10 MB), batch size (300), zip size (200 MB), and a 15-second timeout on one label.
 
+
+
 ## Deploy
 
-A public URL is not published yet. The container is what a host should run: one replica, about 2 vCPU and 4 GB, health check `GET /`. The image build is allowed to download the model files. The running container does not.
+Please see URL from submitted response link, will not be posting the public link here.  
 
-Azure Container Apps would fit a TTB Azure environment, and it does not need Azure AI services. This repository does not deploy there. To publish elsewhere, point the host at `Dockerfile`, set the instance to one replica, and set the health check to `GET /`. Keep the instance warm so the first visitor does not wait for the model to load.
+Otherwise: The container is what a host should run: one replica, about 2 vCPU and 4 GB, health check `GET /`. The image build is allowed to download the model files. The running container does not.
+
+To publish elsewhere, point the host at `Dockerfile`, set the instance to one replica, and set the health check to `GET /`. Keep the instance warm so the first visitor does not wait for the model to load.
 
 After a push to `main`, the image is `ghcr.io/wi11song/ai-label-verification-app:latest`.
 
@@ -114,11 +120,15 @@ docker pull ghcr.io/wi11song/ai-label-verification-app:latest
 docker run --rm -p 8000:8000 --cpus 2 --memory 4g ghcr.io/wi11song/ai-label-verification-app:latest
 ```
 
+
+
 ## Assignment notes
 
 The sections below are the original assignment, including the discovery interviews referred to from `SYSTEMS_DESIGN.md`.
 
 # **Take-Home Project: AI-Powered Alcohol Label Verification App**
+
+
 
 ## **Project Background & Stakeholder Context**
 
@@ -184,6 +194,8 @@ You are free to use any programming languages, frameworks, or libraries you pref
 
 ## **Additional Context**
 
+
+
 ### **About TTB Label Requirements**
 
 For reference, TTB requires specific information on alcohol beverage labels. The exact requirements vary by beverage type (beer, wine, distilled spirits) but common elements include:
@@ -208,18 +220,20 @@ Your app should handle labels containing information like the example below:
 - Class/Type: "Kentucky Straight Bourbon Whiskey"
 - Alcohol Content: "45% Alc./Vol. (90 Proof)"
 - Net Contents: "750 mL"
-- Government Warning: \[Standard government warning text\]
+- Government Warning: Standard government warning text
 
 *We encourage you to create or source additional test labels—AI image generation tools work well for this.*
 
 ## **Deliverables**
 
 1. **Source Code Repository** (GitHub or similar)
-   - All source code
-   - README with setup and run instructions
-   - Brief documentation of approach, tools used, assumptions made
+  - All source code
+  - README with setup and run instructions
+  - Brief documentation of approach, tools used, assumptions made
 2. **Deployed Application URL**
-   - Working prototype we can access and test
+  - Working prototype we can access and test
+
+
 
 ## **Evaluation Criteria**
 

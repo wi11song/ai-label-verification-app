@@ -59,27 +59,29 @@ GitHub Actions runs the test suite on every pull request and every push to `main
 ## How it works
 
 ```
-photo → quality gate → OCR lines → field parser → comparison → Pass / Fail / Needs review
+photo → quality gate → deskew → OCR lines → field parser → comparison → Pass / Fail / Needs review
 ```
 
-If the gate says the photo cannot be read, OCR does not run.
+If the gate says the photo cannot be read, deskew and OCR do not run.
 
 
 | Module                       | Role                                                                                              |
 | ---------------------------- | ------------------------------------------------------------------------------------------------- |
 | `quality.py`                 | Rejects a bad file. Flags a photo that is too small, blurry, blank, or washed out.                |
+| `deskew.py`                  | Straightens a small, clear tilt. An uncertain angle keeps the original photo.                     |
 | `ocr.py`                     | The only module that imports the OCR runtime. Loads the pinned PP-OCRv5 mobile weights from disk. |
+| `emphasis.py`                | Compares the warning prefix stroke with the body. An unclear crop is not treated as a guess.      |
 | `parse.py`                   | Assigns lines to fields. A line already used is not reused as the brand.                          |
 | `normalize.py`, `compare.py` | Comparison rules for each field.                                                                  |
 | `decide.py`                  | Turns the field results into Pass, Fail, or Needs review.                                         |
-| `verify.py`                  | One label: gate, then OCR, then comparison.                                                       |
+| `verify.py`                  | One label: gate, then a light deskew, then OCR, then comparison.                                  |
 | `batch.py`                   | In-memory jobs, two at a time, zip path checks, 60-minute expiry.                                 |
 | `web.py`                     | The pages.                                                                                        |
 
 
 A confident mismatch is Fail. An unreadable or uncertain field is Needs review. Otherwise the label passes. A low-confidence read is never treated as a match.
 
-Brand comparison ignores case, apostrophe style, and extra whitespace. `STONE'S THROW` matches `Stone's Throw`. A missing apostrophe is Needs review, not a match. Alcohol treats US proof as twice the percent, so `45%` matches `45% Alc./Vol. (90 Proof)`. Net contents accept mL, L, and fl oz. The warning must match the statutory wording, including capitals. Line breaks may be joined. Bold type on `GOVERNMENT WARNING:` is not checked, and the page says so.
+Brand comparison ignores case, apostrophe style, and extra whitespace. `STONE'S THROW` matches `Stone's Throw`. A missing apostrophe is Needs review, not a match. Alcohol treats US proof as twice the percent, so `45%` matches `45% Alc./Vol. (90 Proof)`. Net contents accept mL, L, and fl oz. The warning must match the statutory wording, including capitals. Line breaks may be joined. When the warning prefix and a body line can be cropped, their stroke weights are compared. A clearly heavier `GOVERNMENT WARNING:` matches. The same weight is a mismatch. A crop that is too small, too faint, or overlapping is Needs review, even when the words match. When that check does not run, the page says bold type was not checked.
 
 ## Approach and trade-offs
 
@@ -99,8 +101,8 @@ The detector returns words, not whole lines, so words on the same row are joined
 - Match for fields other than the warning is normalized text, not identical pixels.
 - US proof is the alcohol equivalence used here.
 - Beverage-specific TTB exceptions, such as some wine and beer ABV rules, are not implemented. Class words are only used to find a line.
-- The sample labels are flat artwork, not bottle photos. A steep angle or heavy glare should come back as Needs review. Deskew is not implemented.
-- Bold type on the warning is not checked.
+- The sample labels are flat artwork, not bottle photos. A steep angle or heavy glare should come back as Needs review. A tilt of a few degrees is straightened when the angle is clear. An uncertain angle is left as shot.
+- Bold type on `GOVERNMENT WARNING:` is checked by comparing stroke weight with the warning body. When the crop cannot be judged, the label is Needs review. When the check does not run, the page says so.
 - There is no login. The limits are file size (10 MB), batch size (300), zip size (200 MB), and a 15-second timeout on one label.
 
 
